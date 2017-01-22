@@ -470,6 +470,7 @@ class NEBFW(Firework):
 
         # Task 1: Write NEB input sets
         incar = user_incar_settings or {}
+        cust_args = cust_args or {}
         if vasp_input_set is None:
             if from_images:
                 vasp_input_set = MVLCINEBSet

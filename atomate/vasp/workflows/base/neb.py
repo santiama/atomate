@@ -317,6 +317,8 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
                    neb_label=str(n),
                    from_images=True,
                    vasp_input_set=MVLCINEBSet,
+                   vasp_cmd=spec["neb_vasp_cmd"],
+                   gamma_vasp_cmd=spec["neb_gamma_vasp_cmd"],
                    user_incar_settings=uis_neb)
         fws.append(fw)
 
