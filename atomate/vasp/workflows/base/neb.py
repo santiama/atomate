@@ -50,6 +50,7 @@ spec_orig = {"neb_id": 0,
              "path_sites": [],
              "images": []}
 
+
 # TODO: Double check this is useful or not
 # def _update_spec_from_config(spec, configfile):
 #     """
@@ -321,9 +322,19 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
     return workflow
 
 
+def test_get_wf_neb_from_images():
+    test_dir = "/Users/hanmeiTang/repos/atomate/" \
+               "atomate/vasp/workflows/tests/test_files/neb_wf/1/inputs"
+    images = [Structure.from_file(os.path.join(test_dir, "/{:02d}/POSCAR".format(i)))
+              for i in range(5)]
+    wfname = "images_wf"
+
+    get_wf_neb_from_images(images, wfname, neb_round=1)
+
+
 if __name__ == "__main__":
     from pymatgen.util.testing import PymatgenTest
 
-    pass
+    test_get_wf_neb_from_images()
     # structures = [PymatgenTest.get_structure("Si")]
     # wf = get_wf_neb(structures)

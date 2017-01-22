@@ -9,7 +9,7 @@ sequences of VASP calculations.
 
 from fireworks.core.firework import Firework
 
-from pymatgen.io.vasp.sets import MPRelaxSet, MITMDSet
+from pymatgen.io.vasp.sets import MPRelaxSet, MITMDSet, MITRelaxSet
 from pymatgen_diffusion.neb.io import MVLCINEBSet, MVLCINEBEndPointSet
 
 from atomate.common.firetasks.glue_tasks import PassCalcLocs
@@ -371,14 +371,13 @@ class NEBRelaxationFW(Firework):
     Task 1) Read in a structure with "st_label" ("rlx", "ep0" or "ep1")
             and generates input sets.
     Task 2) Run VASP using Custodian
-    Task 3) Transfer results and pass
-            CalcLocs named "{}_dir".format(st_label)
+    Task 3) Pass CalcLocs named "{}_dir".format(st_label)
     """
 
     def __init__(self, spec,
                  st_label='rlx',
                  name="composition",
-                 vasp_input_set=MVLCINEBEndPointSet,
+                 vasp_input_set=None,
                  user_incar_settings=None,
                  vasp_cmd=">>vasp_cmd<<",
                  gamma_vasp_cmd=">>gamma_vasp_cmd<<",
@@ -402,9 +401,12 @@ class NEBRelaxationFW(Firework):
         if "{}_st".format(st_label) not in spec:
             raise ValueError("Required structures "
                              "{} not found in spec!".format(st_label))
-
         if st_label in ["rlx", "ep0", "ep1"]:
             structure = Structure.from_dict(spec["{}_st".format(st_label)])
+            if st_label == 'rlx' and vasp_input_set is None:
+                vasp_input_set = MITRelaxSet
+            if st_label in ["ep0", "ep1"] and vasp_input_set is None:
+                vasp_input_set = MVLCINEBEndPointSet
         else:
             raise ValueError("Unsupported structure label! "
                              "Choose from \'rlx\', \'ep0\' and \'ep1\'.")
@@ -438,8 +440,7 @@ class NEBFW(Firework):
     Task 1) Read in image structures from spec and generates input sets.
             The group of structures are labeled with neb_label (1, 2...)
     Task 2) Run NEB VASP using Custodian
-    Task 3) Transfer results and pass CalcLocs
-            named "neb_dir_{}".format(neb_label)
+    Task 3) Pass CalcLocs named "neb_dir_{}".format(neb_label)
     """
 
     def __init__(self, spec,
@@ -486,7 +487,7 @@ class NEBFW(Firework):
                                         gamma_vasp_cmd=gamma_vasp_cmd,
                                         job_type="neb", **cust_args)
 
-        # Task 3
+        # Task 3: PassCalLocs
         tasks = [write_neb_task,
                  run_neb_task,
                  PassCalcLocs(name="neb_dir_{}".format(neb_label))]
