@@ -80,29 +80,32 @@ def _update_spec_from_inputs(spec, path_sites=None,
         images ([s0_dict, s1_dict, ...]): The image structures,
             including the two endpoints.
     """
+    s = spec_orig.copy()
+    s.update(spec)
+
     if path_sites is not None:
-        spec["path_sites"] = path_sites
+        s["path_sites"] = path_sites
 
     if endpoints is not None:
-        spec["ep0_st"] = endpoints[0].as_dict()
-        spec["ep1_st"] = endpoints[1].as_dict()
+        s["ep0_st"] = endpoints[0].as_dict()
+        s["ep1_st"] = endpoints[1].as_dict()
 
     if images is not None:
         if len(images) <= 2:
             raise ValueError("Too few images!")
-        spec["images"] = images
+        s["images"] = images
         n_images = len(images) - 2
-        spec["_queueadapter"].update({"nnodes": n_images})
+        s["_queueadapter"].update({"nnodes": n_images})
 
         # Set -np tag for vasp command
         # TODO: What if neb_vasp_cmd is empty?
-        neb_vasp_cmd = spec["neb_vasp_cmd"]
+        neb_vasp_cmd = s["neb_vasp_cmd"]
 
         index = neb_vasp_cmd.index('-np')
         np = n_images * int(neb_vasp_cmd[index + 1])
         neb_vasp_cmd[index + 1] = str(np)
-        spec["neb_vasp_cmd"] = neb_vasp_cmd
-        return spec
+        s["neb_vasp_cmd"] = neb_vasp_cmd
+        return s
 
 
 # def get_wf_neb(structures):
@@ -325,7 +328,7 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
 def test_get_wf_neb_from_images():
     test_dir = "/home/hat003/repos/atomate/atomate/vasp/" \
                "workflows/tests/test_files/neb_wf/1/inputs"
-    images = [Structure.from_file(os.path.join(test_dir, "/{:02d}/POSCAR".format(i)))
+    images = [Structure.from_file(os.path.join(test_dir, "{:02d}/POSCAR".format(i)))
               for i in range(5)]
     wfname = "images_wf"
 
