@@ -34,7 +34,7 @@ spec_orig = {"neb_id": 0,
              "path_id": 0,
              "vasp_cmd": ">>vasp_cmd<<",
              "gamma_vasp_cmd": ">>gamma_vasp_cmd<<",
-             "neb_vasp_cmd": ">>neb_vasp_cmd<<",
+             "neb_vasp_cmd": ["mpirun", "-np", "24", "/projects/ong-group/bin/vasp.std"],
              "neb_gamma_vasp_cmd": ">>neb_gamma_vasp_cmd<<",
              "db_file": ">>db_file<<",  # TODO: May remove this
              "_category": "",
