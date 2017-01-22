@@ -471,17 +471,17 @@ class NEBFW(Firework):
         # Task 1: Write NEB input sets
         incar = user_incar_settings or {}
         cust_args = cust_args or {}
-        if vasp_input_set is None:
-            if from_images:
-                vasp_input_set = MVLCINEBSet
-                write_neb_task = WriteNEBFromImages(
-                    vasp_input_set=vasp_input_set,
-                    user_incar_settings=incar)
-            else:
-                vasp_input_set = MVLCINEBEndPointSet
-                write_neb_task = WriteNEBFromEndpoints(
-                    vasp_input_set=vasp_input_set,
-                    user_incar_settings=incar)
+
+        if from_images:
+            vasp_input_set = vasp_input_set or MVLCINEBSet
+            write_neb_task = WriteNEBFromImages(
+                vasp_input_set=vasp_input_set,
+                user_incar_settings=incar)
+        else:
+            vasp_input_set = vasp_input_set or MVLCINEBEndPointSet
+            write_neb_task = WriteNEBFromEndpoints(
+                vasp_input_set=vasp_input_set,
+                user_incar_settings=incar)
 
         # Task 2: Run NEB using Custodian
         run_neb_task = RunVaspCustodian(vasp_cmd=vasp_cmd,
