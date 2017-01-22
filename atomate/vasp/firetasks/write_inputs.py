@@ -20,6 +20,7 @@ from pymatgen.alchemy.materials import TransformedStructure
 from pymatgen.alchemy.transmuters import StandardTransmuter
 from pymatgen.io.vasp import Incar, Poscar
 from pymatgen.io.vasp.sets import MPStaticSet, MPNonSCFSet, MPSOCSet, MPHSEBSSet
+from pymatgen_diffusion.neb.io import MVLCINEBSet
 
 from atomate.utils.utils import env_chk, load_class, get_logger
 
@@ -420,9 +421,10 @@ class WriteNEBFromEndpoints(FiretaskBase):
         2) otherwise, calculate using "image_dist".
 
     Required parameters:
-        vasp_input_set (AbstractVaspInputSet): full VaspInputSet object
+        None
 
     Optional parameters:
+        vasp_input_set (AbstractVaspInputSet): full VaspInputSet object
         endpoints (list of path str): Eg. ["E0/POSCAR", "E1/POSCAR"]
         user_incar_settings (dict): additional INCAR settings.
         sort_tol (float): Distance tolerance (in Angstrom) used to match the atomic
@@ -434,9 +436,9 @@ class WriteNEBFromEndpoints(FiretaskBase):
     fw_spec:
     """
 
-    required_params = ["vasp_input_set"]
-    optional_params = ["endpoint_files", "user_incar_settings",
-                       "sort_tol", "image_dist"]
+    required_params = []
+    optional_params = ["vasp_input_set", "endpoint_files",
+                       "user_incar_settings", "sort_tol", "image_dist"]
 
     def run_task(self, fw_spec):
         logger.info("WriteNEBSetFromEndpoints")
@@ -454,8 +456,9 @@ class WriteNEBFromEndpoints(FiretaskBase):
         images = self._get_images_by_linear_interp(nimages=nimages)
         images = [i.as_dict() for i in images]
         fw_spec.update({"images": images})
+        vasp_input_set = self.get("vasp_input_set", MVLCINEBSet(images))
 
-        write = WriteNEBFromImages(vasp_input_set=self["vasp_input_set"],
+        write = WriteNEBFromImages(vasp_input_set=vasp_input_set,
                                    user_incar_settings=user_incar_settings)
 
         write.run_task(fw_spec=fw_spec)  # TODO: Double check

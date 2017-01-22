@@ -474,14 +474,13 @@ class NEBFW(Firework):
         kwargs = kwargs or {}
 
         if from_images:
-            vasp_input_set = vasp_input_set or MVLCINEBSet
+            images = [Structure.from_dict(s) for s in spec["images"]]
+            vasp_input_set = vasp_input_set or MVLCINEBSet(structures=images),
             write_neb_task = WriteNEBFromImages(
                 vasp_input_set=vasp_input_set,
                 user_incar_settings=incar)
         else:
-            vasp_input_set = vasp_input_set or MVLCINEBEndPointSet
             write_neb_task = WriteNEBFromEndpoints(
-                vasp_input_set=vasp_input_set,
                 user_incar_settings=incar)
 
         # Task 2: Run NEB using Custodian
@@ -495,5 +494,5 @@ class NEBFW(Firework):
                  PassCalcLocs(name="neb_dir_{}".format(neb_label))]
 
         super(NEBFW, self).__init__(tasks,
-                                    name="neb{}_{}".format(neb_label, name))
-        # **kwargs)  # TODO: how to fix this?
+                                    name="neb{}_{}".format(neb_label, name),
+                                    **kwargs)
