@@ -323,8 +323,8 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
 
 
 def test_get_wf_neb_from_images():
-    test_dir = "/Users/hanmeiTang/repos/atomate/" \
-               "atomate/vasp/workflows/tests/test_files/neb_wf/1/inputs"
+    test_dir = "/home/hat003/repos/atomate/atomate/vasp/" \
+               "workflows/tests/test_files/neb_wf/1/inputs"
     images = [Structure.from_file(os.path.join(test_dir, "/{:02d}/POSCAR".format(i)))
               for i in range(5)]
     wfname = "images_wf"
