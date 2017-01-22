@@ -18,6 +18,7 @@ from pymatgen.core import Structure
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
 from pymatgen_diffusion.neb.io import MVLCINEBEndPointSet, MVLCINEBSet, get_endpoints_from_index
 from fireworks.core.firework import Firework, Workflow
+from fireworks.core.launchpad import LaunchPad
 from atomate.utils.utils import get_logger
 from atomate.utils.utils import get_wf_from_spec_dict
 
@@ -37,7 +38,7 @@ spec_orig = {"neb_id": 0,
              "neb_vasp_cmd": ["mpirun", "-np", "24", "/projects/ong-group/bin/vasp.std"],
              "neb_gamma_vasp_cmd": ">>neb_gamma_vasp_cmd<<",
              "db_file": ">>db_file<<",  # TODO: May remove this
-             "_category": "",
+             "_category": "tscc-atomate",
              "_queueadapter": {"nnodes": 1},
              "calc_locs": "",
              "rlx_dir": "",
@@ -335,7 +336,12 @@ def test_get_wf_neb_from_images():
               for i in range(5)]
     wfname = "images_wf"
 
-    get_wf_neb_from_images(images, wfname, neb_round=1)
+    wf = get_wf_neb_from_images(images, wfname, neb_round=1)
+
+    launchpad = LaunchPad.from_file(os.path.join(os.environ['HOME'],
+                                                 '.fireworks',
+                                                 'my_launchpad.yaml'))
+    launchpad.add_wf(wf)
 
 
 if __name__ == "__main__":
