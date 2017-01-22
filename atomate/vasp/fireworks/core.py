@@ -495,5 +495,5 @@ class NEBFW(Firework):
                  PassCalcLocs(name="neb_dir_{}".format(neb_label))]
 
         super(NEBFW, self).__init__(tasks,
-                                    name="neb{}_{}".format(neb_label, name),
-                                    **kwargs)
+                                    name="neb{}_{}".format(neb_label, name))
+        # **kwargs)  # TODO: how to fix this?
