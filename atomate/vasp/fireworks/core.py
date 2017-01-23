@@ -437,6 +437,7 @@ class NEBRelaxationFW(Firework):
 
         super(NEBRelaxationFW,
               self).__init__(tasks,
+                             spec=spec,
                              name="{}_{}".format(st_label, name),
                              **kwargs)
 
@@ -479,15 +480,14 @@ class NEBFW(Firework):
         # Task 1: Write NEB input sets
         incar = user_incar_settings or {}
         cust_args = cust_args or {}
-        kwargs = kwargs or {}
 
         if from_images:
             images = [Structure.from_dict(s) for s in spec["images"]]
-            vasp_input_set = vasp_input_set or MVLCINEBSet(structures=images),
+            vasp_input_set = vasp_input_set or MVLCINEBSet(structures=images)
             write_neb_task = WriteNEBFromImages(
                 vasp_input_set=vasp_input_set,
                 user_incar_settings=incar)
-        else:
+        else:  # TODO: from endpoint doesn't support vasp_input_set customization?
             write_neb_task = WriteNEBFromEndpoints(
                 user_incar_settings=incar)
 
@@ -502,5 +502,6 @@ class NEBFW(Firework):
                  PassCalcLocs(name="neb_dir_{}".format(neb_label))]
 
         super(NEBFW, self).__init__(tasks,
+                                    spec=spec,
                                     name="neb{}_{}".format(neb_label, name),
                                     **kwargs)

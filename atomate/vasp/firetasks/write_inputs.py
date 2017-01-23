@@ -385,12 +385,14 @@ class WriteNEBFromImages(FiretaskBase):
     def run_task(self, fw_spec):
         logger.info("WriteNEBFromImages")
 
-        vis_orig = self["vasp_input_set"]
         user_incar_settings = self.get("user_incar_settings", {})
         if "images" in self:
             images = [Structure.from_file(i) for i in self["images"]]
         else:
-            images = [Structure.from_dict(i) for i in fw_spec["images"]]
+            try:
+                images = [Structure.from_dict(i) for i in fw_spec["images"]]
+            except:
+                images = fw_spec["images"]
 
         # Check images consistence.
         atomic_numbers = images[0].atomic_numbers
@@ -404,10 +406,14 @@ class WriteNEBFromImages(FiretaskBase):
         defaults.update(user_incar_settings)
 
         # Check vasp_input_set.
-        if hasattr(vis_orig, 'write_input'):
-            vis = vis_orig(structures=images, user_incar_settings=defaults)
+        # if a full VaspInputSet object was provided
+        if hasattr(self['vasp_input_set'], 'write_input'):
+            vis = self['vasp_input_set']
+
+        # if VaspInputSet String + parameters was provided
         else:
-            raise ValueError("Unknown vasp_input_set!")
+            vis_cls = load_class("pymatgen_diffusion.neb.io", self["vasp_input_set"])
+            vis = vis_cls(self["structures"], **self.get("vasp_input_params", images))
 
         vis.write_input(output_dir=".")
 
