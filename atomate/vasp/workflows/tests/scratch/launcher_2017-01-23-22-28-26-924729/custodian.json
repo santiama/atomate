@@ -1,0 +1,27 @@
+[
+    {
+        "job": {
+            "@class": "VaspNEBJob",
+            "@module": "custodian.vasp.jobs",
+            "gamma_vasp_cmd": [
+                "echo",
+                "hello",
+                "24",
+                ">>gamma_vasp_cmd<<"
+            ],
+            "output_file": "neb_vasp.out",
+            "auto_npar": false,
+            "suffix": "",
+            "auto_gamma": true,
+            "vasp_cmd": [
+                "echo",
+                "hello",
+                "24",
+                "world"
+            ],
+            "final": false,
+            "backup": true
+        },
+        "corrections": []
+    }
+]

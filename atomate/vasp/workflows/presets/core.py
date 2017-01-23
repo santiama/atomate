@@ -5,6 +5,7 @@ from __future__ import division, print_function, unicode_literals, absolute_impo
 import numpy as np
 
 from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
+from pymatgen.core import Structure
 
 from atomate.vasp.config import SMALLGAP_KPOINT_MULTIPLY, STABILITY_CHECK, VASP_CMD, \
     DB_FILE, ADD_WF_METADATA
@@ -16,6 +17,8 @@ from atomate.vasp.workflows.base.raman import get_wf_raman_spectra
 from atomate.vasp.workflows.base.gibbs import get_wf_gibbs_free_energy
 from atomate.vasp.workflows.base.bulk_modulus import get_wf_bulk_modulus
 from atomate.vasp.workflows.base.thermal_expansion import get_wf_thermal_expansion
+from atomate.vasp.workflows.base.neb import get_wf_neb_from_endpoints, \
+    get_wf_neb_from_structure, get_wf_neb_from_images
 
 
 __author__ = 'Anubhav Jain, Kiran Mathew'
@@ -330,5 +333,52 @@ def wf_thermal_expansion(structure, c=None):
 
     if c.get("ADD_WF_METADATA", ADD_WF_METADATA):
         wf = add_wf_metadata(wf, structure)
+
+    return wf
+
+
+def wf_nudged_elastic_band(structures, c=None):
+    """
+    Nudged elastic band workflow from the given structures and config dict.
+
+    Args:
+        structures (Structure / [Structure]): input structures
+        c (dict): workflow config dict
+
+    Returns:
+        Workflow
+    """
+    c = c or {}
+    wfname = c.get("wfname", "NEB workflow")
+    path_sites = c.get("path_sites", [])
+    neb_round = c.get("neb_round", 1)
+    if isinstance(structures, Structure):
+        structures = [structures]
+
+    # Set up running mode
+    modes = {1: "from_structure", 2: "from_endpoints"}
+    if isinstance(structures, list):
+        if len(structures) == 0:
+            raise ValueError("Empty input!")
+        mode = modes.get(len(structures), "from_images")
+    else:
+        raise ValueError("A list of Structure is expected!")
+
+    if mode == "from_structure":
+        wf = get_wf_neb_from_structure(structure=structures[0],
+                                       path_sites=path_sites,
+                                       wfname=wfname,
+                                       spec=c,
+                                       neb_round=neb_round)
+    elif mode == "from_endpoints":
+        wf = get_wf_neb_from_endpoints(endpoints=structures,
+                                       wfname=wfname,
+                                       spec=c,
+                                       neb_round=neb_round)
+    else:
+        wf = get_wf_neb_from_images(images=structures,
+                                    wfname=wfname,
+                                    spec=c,
+                                    neb_round=neb_round)
 
     return wf

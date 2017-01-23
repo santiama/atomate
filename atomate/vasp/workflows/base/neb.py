@@ -29,45 +29,29 @@ __email__ = 'hat003@eng.ucsd.edu, ihchu@eng.ucsd.edu'
 
 logger = get_logger(__name__)
 
-module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+# module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
-spec_orig = {"neb_id": 0,
-             "path_id": 0,
-             "vasp_cmd": ">>vasp_cmd<<",
-             "gamma_vasp_cmd": ">>gamma_vasp_cmd<<",
-             "neb_vasp_cmd": ["mpirun", "-np", "24", "/projects/ong-group/bin/vasp.std"],
-             "neb_gamma_vasp_cmd": ">>neb_gamma_vasp_cmd<<",
-             "db_file": ">>db_file<<",  # TODO: May remove this
-             "_category": "tscc-atomate",
-             "_queueadapter": {"nnodes": 1},
-             "calc_locs": "",
-             "rlx_dir": "",
+# the template of fw_spec, 'mandatory' means the value must be validated with carefulness.
+spec_orig = {"neb_id": 0,  # considering....
+             "path_id": 0,  # considering....
+             "vasp_cmd": ">>vasp_cmd<<",  # optional, 'default vasp'
+             "gamma_vasp_cmd": ">>gamma_vasp_cmd<<",  # optional, default 'vasp_gam'
+             "mpi_command": {"command": "mpirun", "np_tag": "-np"},  # mandatory, option limited to -np tag only
+             "ppn": "24",  # Processors per node  # mandatory
+             "db_file": ">>db_file<<",  # TODO: May remove this  # optional
+             "_category": "tscc-atomate",  # mandatory setting from fireworks
+             "_queueadapter": {"nnodes": 1},  # mandatory, default
+             "calc_locs": "",  # unnecessary, update during runtime
+             "rlx_dir": "",  # unnecessary, update during runtime
              "ep0_dir": "",  # TODO: This is enveloped in CalLocs
-             "ep1_dir": "",
+             "ep1_dir": "",  # unnecessary, update during runtime
              "neb_dir": {},  # key = "1", "2" ... are path_id
-             "rlx_st": {},
-             "ep0_st": {},
-             "ep1_st": {},
+             "rlx_st": {},  # unnecessary, update during runtime
+             "ep0_st": {},  # mandatory if started using endpoints
+             "ep1_st": {},  # unnecessary, update during runtime
              "path_sites": [],
-             "images": []}
-
-
-# TODO: Double check this is useful or not
-# def _update_spec_from_config(spec, configfile):
-#     """
-#     Update spec from config file.
-#     Args:
-#         spec (dict): input spec.
-#         configfile (str): neb workflow config yaml file.
-#
-#     Returns:
-#         spec (dict)
-#     """
-#     with open(configfile, "r") as yaml_file:
-#         config = yaml.load(yaml_file)
-#         if "common_params" in config:
-#             spec.update(config["common_params"])
-#         return spec
+             # mandatory if started using images
+             "images": []}  # otherwise unnecessary, update during runtime
 
 
 def _update_spec_from_inputs(spec, path_sites=None,
@@ -98,15 +82,37 @@ def _update_spec_from_inputs(spec, path_sites=None,
         n_images = len(images) - 2
         s["_queueadapter"].update({"nnodes": n_images})
 
-        # Set -np tag for vasp command
-        # TODO: What if neb_vasp_cmd is empty?
-        neb_vasp_cmd = s["neb_vasp_cmd"]
-
-        index = neb_vasp_cmd.index('-np')
-        np = n_images * int(neb_vasp_cmd[index + 1])
-        neb_vasp_cmd[index + 1] = str(np)
-        s["neb_vasp_cmd"] = neb_vasp_cmd
         return s
+
+
+def _get_mpi_command(spec, mode):  # TODO: Enable setting using >>my_vasp_cmd<<
+    """
+    A convenience method to get neb command using mpi program:
+    E.g.: 'mpirun -np 48 vasp'
+
+    Args:
+        spec (dict): fw_spec
+        mode (str): choose from ["std", "gam"].
+
+    Returns:
+        mpi command (str).
+    """
+    if mode == "std":
+        exe = spec["vasp_cmd"]
+    elif mode == "gam":
+        exe = spec["gamma_vasp_cmd"]
+    else:
+        raise ValueError("Choose mode from \'std\' and \'gam\'!")
+
+    nnodes = spec["_queueadapter"]["nnodes"]
+    ppn = spec["ppn"]
+    ncpu = nnodes * ppn
+
+    mpi_cmd = spec["mpi_command"]["command"]
+    np_tag = spec["mpi_command"]["np_tag"]
+    full_mpi_command = "{} {} {} {}".format(mpi_cmd, np_tag, ncpu, exe)
+
+    return full_mpi_command
 
 
 # def get_wf_neb(structures):
@@ -311,14 +317,17 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
     spec = _update_spec_from_inputs(spec, images=images_dict)
     uis_neb = uis_neb or {}
 
+    vasp_cmd = _get_mpi_command(spec, "std")
+    gamma_vasp_cmd = _get_mpi_command(spec, "gam")
+
     fws = []
     for n in range(neb_round):
         fw = NEBFW(spec=spec,
                    name=formula,
                    neb_label=str(n),
                    from_images=True,
-                   vasp_cmd=spec["neb_vasp_cmd"],
-                   gamma_vasp_cmd=spec["neb_gamma_vasp_cmd"],
+                   vasp_cmd=vasp_cmd,
+                   gamma_vasp_cmd=gamma_vasp_cmd,
                    user_incar_settings=uis_neb)
         fws.append(fw)
 
@@ -327,26 +336,27 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
     return workflow
 
 
-def test_get_wf_neb_from_images():
-    # test_dir = "/home/hat003/repos/atomate/atomate/vasp/" \
-    #            "workflows/tests/test_files/neb_wf/1/inputs"
-    test_dir = "/Users/hanmeiTang/repos/atomate/atomate/vasp" \
-               "/workflows/tests/test_files/neb_wf/1/inputs"
-    images = [Structure.from_file(os.path.join(test_dir, "{:02d}/POSCAR".format(i)))
-              for i in range(5)]
-    wfname = "images_wf"
-
-    wf = get_wf_neb_from_images(images, wfname, neb_round=1)
-
-    launchpad = LaunchPad.from_file(os.path.join(os.environ['HOME'],
-                                                 '.fireworks',
-                                                 'my_launchpad.yaml'))
-    launchpad.add_wf(wf)
+# def test_get_wf_neb_from_images():
+#     # test_dir = "/home/hat003/repos/atomate/atomate/vasp/" \
+#     #            "workflows/tests/test_files/neb_wf/1/inputs"
+#     test_dir = "/Users/hanmeiTang/repos/atomate/atomate/vasp" \
+#                "/workflows/tests/test_files/neb_wf/1/inputs"
+#     images = [Structure.from_file(os.path.join(test_dir, "{:02d}/POSCAR".format(i)))
+#               for i in range(5)]
+#     wfname = "images_wf"
+#
+#     wf = get_wf_neb_from_images(images, wfname, neb_round=1)
+#
+#     launchpad = LaunchPad.from_file(os.path.join(os.environ['HOME'],
+#                                                  '.fireworks',
+#                                                  'my_launchpad.yaml'))
+#     launchpad.add_wf(wf)
 
 
 if __name__ == "__main__":
     from pymatgen.util.testing import PymatgenTest
 
-    test_get_wf_neb_from_images()
+    # test_get_wf_neb_from_images()
     # structures = [PymatgenTest.get_structure("Si")]
     # wf = get_wf_neb(structures)
+    pass
