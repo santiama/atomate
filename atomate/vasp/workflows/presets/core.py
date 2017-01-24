@@ -337,48 +337,152 @@ def wf_thermal_expansion(structure, c=None):
     return wf
 
 
-def wf_nudged_elastic_band(structures, c=None):
+def wf_nudged_elastic_band(structures, config=None):
     """
     Nudged elastic band workflow from the given structures and config dict.
 
+    'is_optimized' = config, otherwise False
+    'neb_round' = config, otherwise 1
+
+    Table 1. settings and corresponding workflow (labeled by mode#)
+    =======================================================================
+    #  len(structures)  is_optimized    neb_round     |     Workflow      |
+    -----------------------------------------------------------------------
+    1      1              False         r = 1, 2 ...  |   rlx--ep--neb(r) |
+    2      1              True          r = 1, 2 ...  |   ep--neb(r)      |
+    3      2              False         r = 1, 2 ...  |   ep--neb(r)      |
+    4      2              True          r = 1, 2 ...  |   neb(r)          |
+    5     > 2             T/F           r = 1, 2 ...  |   neb(r)          |
+    =======================================================================
+
     Args:
         structures (Structure / [Structure]): input structures
-        c (dict): workflow config dict
+        config (dict): workflow config dict
 
     Returns:
         Workflow
     """
-    c = c or {}
-    wfname = c.get("wfname", "NEB workflow")
-    path_sites = c.get("path_sites", [])
-    neb_round = c.get("neb_round", 1)
+    def get_incar(mode):
+        """Get user_incar_settings for fireworks."""
+        uis_ini, uis_ep, uis_neb = {}, {}, [{}] * neb_round
+
+        if mode not in [1, 2, 3, 4, 5]:
+            raise ValueError("Unknown mode!")
+        if mode in [1]:
+            try:
+                uis_ini = c["fireworks"][0]["user_incar_settings"]
+            except:
+                uis_ini = {}
+            try:
+                uis_ep = c["fireworks"][1]["user_incar_settings"]
+            except:
+                uis_ep = {}
+            for i in range(neb_round):
+                try:
+                    uis_neb[i] = c["fireworks"][3 + i]["user_incar_settings"]
+                except:
+                    uis_neb[i] = {}
+        elif mode in [2, 3]:
+            try:
+                uis_ep = c["fireworks"][0]["user_incar_settings"]
+            except:
+                uis_ep = {}
+            for i in range(neb_round):
+                try:
+                    uis_neb[i] = c["fireworks"][2 + i]["user_incar_settings"]
+                except:
+                    uis_neb[i] = {}
+        else:
+            for i in range(neb_round):
+                try:
+                    uis_neb[i] = c["fireworks"][i]["user_incar_settings"]
+                except:
+                    uis_neb[i] = {}
+        return uis_ini, uis_ep, uis_neb
+
+    # Structure --> [Structure]
     if isinstance(structures, Structure):
         structures = [structures]
+    if not(isinstance(structures, list) and len(structures) > 0):
+        raise ValueError("structures must be a list of Structure!")
 
-    # Set up running mode
-    modes = {1: "from_structure", 2: "from_endpoints"}
-    if isinstance(structures, list):
-        if len(structures) == 0:
-            raise ValueError("Empty input!")
-        mode = modes.get(len(structures), "from_images")
+    # config
+    c = config or {}
+    wfname = "CINEB"
+    path_sites = []
+
+    is_optimized = c.get("is_optimized", False)
+    mode = 0
+
+    # construct wf using config file
+    if c.get("fireworks"):
+        fw_list = [f['fw'] for f in c.get("fireworks")]
+        neb_round = fw_list.count("atomate.vasp.fireworks.core.NEBFW")
+        if neb_round == 0:
+            raise ValueError("No NEB fireworks in config file!")
+        if len(structures) == 1:
+            if not is_optimized and len(fw_list) - neb_round == 3:
+                mode = 1
+            elif is_optimized and len(fw_list) - neb_round == 2:
+                mode = 2
+            else:
+                raise ValueError("structure conflict with "
+                                 "config file settings!")
+        elif len(structures) == 2:
+            if not is_optimized and len(fw_list) - neb_round == 2:
+                mode = 3
+            elif is_optimized and len(fw_list) - neb_round == 0:
+                mode = 4
+            else:
+                raise ValueError("structure conflict with "
+                                 "config file settings!")
+        else:
+            mode = 5
+
+    # construct wf without config file
     else:
-        raise ValueError("A list of Structure is expected!")
+        neb_round = 1
+        if len(structures) == 1:
+            mode = 2 if is_optimized else 1
+        elif len(structures) == 2:
+            mode = 4 if is_optimized else 3
+        else: mode = 5
 
-    if mode == "from_structure":
+    uis_ini, uis_ep, uis_neb = get_incar(mode)
+
+    # Get other parameters from config file
+    if c.get("common_params"):
+        p = c.get("common_params")
+        wfname = p.get("wfname", "CINEB")
+        path_sites = p.get("path_sites", [])
+
+    # Assign workflow using mode
+    if mode in [1, 2]:
         wf = get_wf_neb_from_structure(structure=structures[0],
                                        path_sites=path_sites,
+                                       is_optimized=is_optimized,
                                        wfname=wfname,
                                        spec=c,
-                                       neb_round=neb_round)
-    elif mode == "from_endpoints":
+                                       neb_round=neb_round,
+                                       uis_ini=uis_ini,
+                                       uis_ep=uis_ep,
+                                       uis_neb=uis_neb)
+
+    elif mode in [3, 4]:
         wf = get_wf_neb_from_endpoints(endpoints=structures,
+                                       is_optimized=is_optimized,
                                        wfname=wfname,
                                        spec=c,
-                                       neb_round=neb_round)
+                                       neb_round=neb_round,
+                                       uis_ep=uis_ep,
+                                       uis_neb=uis_neb)
+
     else:
         wf = get_wf_neb_from_images(images=structures,
                                     wfname=wfname,
                                     spec=c,
-                                    neb_round=neb_round)
+                                    neb_round=neb_round,
+                                    uis_neb=uis_neb)
 
     return wf
+

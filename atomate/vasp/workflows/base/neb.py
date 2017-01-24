@@ -34,6 +34,7 @@ logger = get_logger(__name__)
 # the template of fw_spec, 'mandatory' means the value must be validated with carefulness.
 spec_orig = {"neb_id": 0,  # considering....
              "path_id": 0,  # considering....
+             "wfname": "CINEB",  # optional
              "vasp_cmd": ">>vasp_cmd<<",  # optional, 'default vasp'
              "gamma_vasp_cmd": ">>gamma_vasp_cmd<<",  # optional, default 'vasp_gam'
              "mpi_command": {"command": "mpirun", "np_tag": "-np"},  # mandatory, option limited to -np tag only
@@ -85,21 +86,21 @@ def _update_spec_from_inputs(spec, path_sites=None,
         return s
 
 
-def _get_mpi_command(spec, mode):  # TODO: Enable setting using >>my_vasp_cmd<<
+def _get_mpi_command(spec, vasp):  # TODO: Enable setting using >>my_vasp_cmd<<
     """
     A convenience method to get neb command using mpi program:
     E.g.: 'mpirun -np 48 vasp'
 
     Args:
         spec (dict): fw_spec
-        mode (str): choose from ["std", "gam"].
+        vasp (str): choose from ["std", "gam"].
 
     Returns:
         mpi command (str).
     """
-    if mode == "std":
+    if vasp == "std":
         exe = spec["vasp_cmd"]
-    elif mode == "gam":
+    elif vasp == "gam":
         exe = spec["gamma_vasp_cmd"]
     else:
         raise ValueError("Choose mode from \'std\' and \'gam\'!")
@@ -115,40 +116,17 @@ def _get_mpi_command(spec, mode):  # TODO: Enable setting using >>my_vasp_cmd<<
     return full_mpi_command
 
 
-# def get_wf_neb(structures):
-#     # This should be a very long input, don't use configfile
-#     # fw1: write inputs
-#     # fw2: run neb
-#     # fw3: transfer result to destination
-#     """
-#     Return neb workflow according to inputs.
-#
-#     Args:
-#         structures:
-#         configfile:
-#         transfer_dir (str): list of transfer directories.
-#
-#     Returns:
-#
-#     """
-#     # spec = spec_orig
-#     # if configfile is not None:
-#     #     spec = _update_spec_from_config(spec, configfile)
-#
-#     workflow = get_wf_neb_from_images()
-#
-#     return workflow
-
-
 def get_wf_neb_from_structure(structure, path_sites,
                               is_optimized=True,
                               wfname=None, neb_round=1,
-                              spec=None, uis_ini=None,
-                              uis_ep=None, uis_neb=None):
+                              spec=None,
+                              uis_ini=None, uis_ep=None,
+                              uis_neb=None):
     """
-    Get a CI-NEB workflow from given endpoints.
-    Workflow: (Init relax) -- Endpoints relax -- NEB_1 -- NEB_2 - ... - NEB_n
-
+    Get a CI-NEB workflow from given perfect structures.
+    Workflow: (Init relax) -- Endpoints relax -- NEB_1 -- NEB_2 - ... - NEB_r
+              mode 1: rlx--ep--neb(r)
+              mode 2: ep--neb(r)
     Args:
         structure (Structure): The perfect structure.
         path_sites (list[int]): The two vacancy site indices.
@@ -159,12 +137,13 @@ def get_wf_neb_from_structure(structure, path_sites,
         spec (dict): user setting spec settings to overwrite spec_orig.
         uis_ini (dict): Additional user_incar_settings for initial relaxations.
         uis_ep (dict): Additional user_incar_settings for endpoint relaxations.
-        uis_neb (dict): Additional user_incar_settings for NEB.
+        uis_neb (list of dict): Additional user_incar_settings for NEB.
+                        Eg.: [{"IOPT": 7}, {"IOPT": 1}, {"EDIFFG": -0.02}]
 
     Returns:
         Workflow
     """
-    logger.info("Get workflow from perfect structure.")
+    logger.info("Getting workflow from perfect structure.")
 
     # Read in params.
     formula = structure.composition.reduced_formula
@@ -173,28 +152,37 @@ def get_wf_neb_from_structure(structure, path_sites,
 
     uis_ini = uis_ini or {}
     uis_ep = uis_ep or {}
-    uis_neb = uis_neb or {}
+    uis_neb = uis_neb or []
+    vasp_cmd = _get_mpi_command(spec, "std")
+    gamma_vasp_cmd = _get_mpi_command(spec, "gam")
 
     # Get neb fireworks.
     neb_fws = []
     for n in range(neb_round):
         fw = NEBFW(spec=spec,
                    name=formula,
-                   neb_label=str(n),
+                   neb_label=str(n+1),
                    from_images=False,
-                   vasp_input_set=MVLCINEBSet,
-                   user_incar_settings=uis_neb)
+                   vasp_input_set=None,
+                   user_incar_settings=uis_neb[n],
+                   vasp_cmd=vasp_cmd,
+                   gamma_vasp_cmd=gamma_vasp_cmd,
+                   cust_args={})
         neb_fws.append(fw)
 
     # Get relaxation fireworks.
     if is_optimized:
         endpoints = get_endpoints_from_index(structure, path_sites)
-        ep_dict = [e.as_dict() for e in endpoints]
-        spec = _update_spec_from_inputs(spec, endpoints=ep_dict)
+        eps_dict = [e.as_dict() for e in endpoints]
+        spec = _update_spec_from_inputs(spec, endpoints=eps_dict)
         rlx_fws = [NEBRelaxationFW(spec=spec,
                                    st_label="ep{}".format(i),
                                    name=formula,
-                                   user_incar_settings=uis_ep) for i in [0, 1]]
+                                   vasp_input_set=None,
+                                   user_incar_settings=uis_ep,
+                                   vasp_cmd=vasp_cmd,
+                                   gamma_vasp_cmd=gamma_vasp_cmd,
+                                   cust_args={}) for i in [0, 1]]
 
         links = {rlx_fws[0]: [neb_fws[0]],
                  rlx_fws[1]: [neb_fws[0]]}
@@ -203,11 +191,12 @@ def get_wf_neb_from_structure(structure, path_sites,
         rlx_fws = [NEBRelaxationFW(spec=spec,
                                    st_label="{}".format(label),
                                    name=formula,
+                                   vasp_input_set=None,
                                    user_incar_settings=incar)
                    for label, incar in zip(["rlx", "ep0", "ep1"],
                                            [uis_ini, uis_ep, uis_ep])]
 
-        links = {rlx_fws[0]: [rlx_fws[1], rlx_fws[1]],
+        links = {rlx_fws[0]: [rlx_fws[1], rlx_fws[2]],
                  rlx_fws[1]: [neb_fws[0]],
                  rlx_fws[2]: [neb_fws[0]]}
 
@@ -221,12 +210,16 @@ def get_wf_neb_from_structure(structure, path_sites,
     return workflow
 
 
-def get_wf_neb_from_endpoints(endpoints=None, is_optimized=True,
-                              wfname=None, neb_round=1,
-                              spec=None, uis_ep=None, uis_neb=None):
+def get_wf_neb_from_endpoints(endpoints=None,
+                              is_optimized=True,
+                              wfname=None,
+                              spec=None, neb_round=1,
+                              uis_ep=None, uis_neb=None):
     """
     Get a CI-NEB workflow from given endpoints.
-    Workflow: (Endpoints relax -- ) NEB_1 -- NEB_2 - ... - NEB_n
+    Workflow: (Endpoints relax -- ) NEB_1 -- NEB_2 - ... - NEB_r
+              mode 3: ep--neb(r)
+              mode 4: neb(r)
 
     Args:
         endpoints (list[Structure]): The image structures,
@@ -234,15 +227,16 @@ def get_wf_neb_from_endpoints(endpoints=None, is_optimized=True,
         is_optimized (bool): True implies the provided endpoint structures
             are optimized, otherwise run endpoints relaxation before NEB.
         wfname (str): some appropriate name for the workflow.
-        neb_round (int): Times of NEB calculations.
         spec (dict): user setting spec settings to overwrite spec_orig.
+        neb_round (int): Times of NEB calculations.
         uis_ep (dict): Additional user_incar_settings for endpoint relaxations.
-        uis_neb (dict): Additional user_incar_settings for NEB.
+        uis_neb (list of dict): Additional user_incar_settings for NEB.
+                        Eg.: [{"IOPT": 7}, {"IOPT": 1}, {"EDIFFG": -0.02}]
 
     Returns:
         Workflow
     """
-    logger.info("Get workflow from endpoints.")
+    logger.info("Getting workflow from endpoints.")
 
     # Read in params.
     if endpoints is not None:
@@ -254,17 +248,23 @@ def get_wf_neb_from_endpoints(endpoints=None, is_optimized=True,
     spec = spec or {}
     spec = _update_spec_from_inputs(spec, endpoints=endpoints_dict)
     uis_ep = uis_ep or {}
-    uis_neb = uis_neb or {}
+    uis_neb = uis_neb or []
+    vasp_cmd = _get_mpi_command(spec, "std")
+    gamma_vasp_cmd = _get_mpi_command(spec, "gam")
 
     neb_fws = []
     for n in range(neb_round):
         fw = NEBFW(spec=spec,
                    name=formula,
-                   neb_label=str(n),
+                   neb_label=str(n+1),
                    from_images=False,
-                   vasp_input_set=MVLCINEBSet,
-                   user_incar_settings=uis_neb)
+                   vasp_input_set=None,
+                   user_incar_settings=uis_neb[n],
+                   vasp_cmd=vasp_cmd,
+                   gamma_vasp_cmd=gamma_vasp_cmd,
+                   cust_args={})
         neb_fws.append(fw)
+
     workflow = Workflow(neb_fws, name="neb_workflow_{}".format(wfname))
 
     # Add endpoints relaxation if structures not optimized.
@@ -272,9 +272,11 @@ def get_wf_neb_from_endpoints(endpoints=None, is_optimized=True,
         ep_fws = [NEBRelaxationFW(spec=spec,
                                   st_label="ep{}".format(i),
                                   name=formula,
-                                  user_incar_settings=uis_ep)
-                  for i in [0, 1]]
-
+                                  vasp_input_set=None,
+                                  user_incar_settings=uis_ep,
+                                  vasp_cmd=vasp_cmd,
+                                  gamma_vasp_cmd=gamma_vasp_cmd,
+                                  cust_args={}) for i in [0, 1]]
         # Create Firework links.
         fws = ep_fws + neb_fws
         links = {ep_fws[0]: [neb_fws[0]],
@@ -284,11 +286,14 @@ def get_wf_neb_from_endpoints(endpoints=None, is_optimized=True,
 
         workflow = Workflow(fws, links_dict=links,
                             name="neb_{}".format(wfname))
-        return workflow
+    return workflow
 
 
-def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
-                           spec=None, uis_neb=None):
+def get_wf_neb_from_images(images=None,
+                           wfname=None,
+                           spec=None,
+                           neb_round=1,
+                           uis_neb=None):
     """
     Get a CI-NEB workflow from given images.
     Workflow: NEB_1 -- NEB_2 - ... - NEB_n
@@ -297,14 +302,15 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
         images (list[Structure]): The image structures,
             if None then read from spec["images"]
         wfname (str): some appropriate name for the workflow.
-        neb_round (int): Times of NEB calculations.
         spec (dict): user setting spec settings to overwrite spec_orig.
-        uis_neb (dict): Additional user_incar_settings for NEB.
+        neb_round (int): Times of NEB calculations.
+        uis_neb (list of dict): Additional user_incar_settings for NEB.
+                        Eg.: [{"IOPT": 7}, {"IOPT": 1}, {"EDIFFG": -0.02}]
 
     Returns:
         Workflow
     """
-    logger.info("Get workflow from images.")
+    logger.info("Getting workflow from images.")
 
     # Read in params.
     spec = spec or {}
@@ -315,8 +321,7 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
         images_dict = spec["images"]  # TODO: what if spec is {}
     wfname = wfname or datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S-%f')
     spec = _update_spec_from_inputs(spec, images=images_dict)
-    uis_neb = uis_neb or {}
-
+    uis_neb = uis_neb or []
     vasp_cmd = _get_mpi_command(spec, "std")
     gamma_vasp_cmd = _get_mpi_command(spec, "gam")
 
@@ -324,11 +329,13 @@ def get_wf_neb_from_images(images=None, wfname=None, neb_round=1,
     for n in range(neb_round):
         fw = NEBFW(spec=spec,
                    name=formula,
-                   neb_label=str(n),
+                   neb_label=str(n + 1),
                    from_images=True,
+                   vasp_input_set=None,
+                   user_incar_settings=uis_neb[n],
                    vasp_cmd=vasp_cmd,
                    gamma_vasp_cmd=gamma_vasp_cmd,
-                   user_incar_settings=uis_neb)
+                   cust_args={})
         fws.append(fw)
 
     workflow = Workflow(fws, name="neb_{}".format(wfname))

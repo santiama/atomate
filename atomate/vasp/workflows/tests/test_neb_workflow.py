@@ -26,12 +26,15 @@ __email__ = 'hat003@eng.ucsd.edu, ihchu@eng.ucsd.edu'
 module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 # db_dir = os.path.join(module_dir, "..", "..", "..", "common",
 #                       "reference_files", "db_connections")
+# TODO: Note this unit test will reset launchpad!
+# TODO: To fix this, set a open local MongoDB database for testing!
 db_dir = os.path.join(os.environ["HOME"], ".fireworks")  # TODO: Modify this after testing
 ref_dir = os.path.join(module_dir, "test_files")
 
 # If true, retains the database and output dirs at the end of the test
 # DEBUG_MODE = False
-# If None, runs a "fake" VASP. Otherwise, runs VASP with this command... # TODO: useless...
+# TODO: useless...
+# If None, runs a "fake VASP". Otherwise, runs VASP with this command...
 VASP_CMD = None
 
 
@@ -46,18 +49,44 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
             print('This system is not set up to run VASP jobs. '
                   'Please set PMG_VASP_PSP_DIR variable in '
                   'your ~/.pmgrc.yaml file.')
+
+        # Use the three same Si structures as fake image structures
         cls.structures = [PymatgenTest.get_structure("Si")] * 3
         cls.scratch_dir = os.path.join(module_dir, "scratch")
+
         # Run a fake vasp command instead of "mpirun -np $NCPUS vasp"
-        # Instead 'echo hello 24 world'
-        cls.neb_config = {"wfname": "unit test",
+        # Instead 'echo hello 24 world' as a Fake Vasp command
+        cls.config_1 = {"wfname": "unittest_1",
                           "path_sites": [0, 1],
                           "vasp_cmd": "world",
                           "mpi_command": {"command": "echo", "np_tag": "hello"}}
-        cls.wf = wf_nudged_elastic_band(cls.structures, cls.neb_config)
+
+        cls.config_2 = {"wfname": "unittest_2",
+                          "path_sites": [0, 1],
+                          "vasp_cmd": "world",
+                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
+        cls.config_3 = {"wfname": "unittest_3",
+                          "vasp_cmd": "world",
+                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
+        cls.config_4 = {"wfname": "unittest_4",
+                          "vasp_cmd": "world",
+                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
+        cls.config_5 = {"wfname": "unittest_5",
+                          "vasp_cmd": "world",
+                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
+
+        # Workflow for 5 modes
+        cls.wf_1 = wf_nudged_elastic_band(cls.structures[0], cls.config_1)
+        cls.wf_2 = wf_nudged_elastic_band(cls.structures[0], cls.config_2)
+        cls.wf_3 = wf_nudged_elastic_band(cls.structures[: 2], cls.config_3)
+        cls.wf_4 = wf_nudged_elastic_band(cls.structures[: 2], cls.config_4)
+        cls.wf_5 = wf_nudged_elastic_band(cls.structures, cls.config_5)
 
     def setUp(self):
-        """Basic check for scratch directory and launchpad configurations."""
+        """
+        Basic check for scratch directory and launchpad configurations.
+        Launchpad will be reset.
+        """
         if os.path.exists(self.scratch_dir):
             shutil.rmtree(self.scratch_dir)
         os.makedirs(self.scratch_dir)
@@ -100,6 +129,7 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
         """test _get_mpi_command() function"""
         # TODO: finish this...
         pass
+
     # def _get_task_database(self):
     #     with open(os.path.join(db_dir, "db.json")) as f:
     #         creds = json.loads(f.read())
