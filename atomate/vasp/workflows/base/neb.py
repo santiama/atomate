@@ -3,33 +3,18 @@
 
 """
 This module defines the Climbing Image Nudged Elastic Band (CI-NEB) workflow.
-1) initial relaxation fireworks (pre-defined)
-2) Generate endpoints --> Two endpoints relaxation
-3) Use two endpoints --> Generate images --> CI-NEB
-4)                       Images --> CI-NEB
 """
 
-import yaml
-import os
 from datetime import datetime
 
-from monty.serialization import loadfn
 from pymatgen.core import Structure
-from pymatgen.io.vasp.sets import MPRelaxSet, MPStaticSet
-from pymatgen_diffusion.neb.io import MVLCINEBEndPointSet, MVLCINEBSet, get_endpoints_from_index
+from pymatgen_diffusion.neb.io import get_endpoints_from_index
 from fireworks.core.firework import Firework, Workflow
-from fireworks.core.launchpad import LaunchPad
-from atomate.utils.utils import get_logger
-from atomate.utils.utils import get_wf_from_spec_dict
 
-from atomate.vasp.fireworks.core import OptimizeFW, NEBFW, NEBRelaxationFW
+from atomate.vasp.fireworks.core import NEBFW, NEBRelaxationFW
 
 __author__ = "Hanmei Tang, Iek-Heng Chu"
 __email__ = 'hat003@eng.ucsd.edu, ihchu@eng.ucsd.edu'
-
-logger = get_logger(__name__)
-
-# module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 # the template of fw_spec, 'mandatory' means the value must be validated with carefulness.
 spec_orig = {"neb_id": 0,  # considering....
@@ -42,7 +27,7 @@ spec_orig = {"neb_id": 0,  # considering....
              "db_file": ">>db_file<<",  # TODO: May remove this  # optional
              "_category": "tscc-atomate",  # mandatory setting from fireworks
              "_queueadapter": {"nnodes": 1},  # mandatory, default
-             "calc_locs": "",  # unnecessary, update during runtime
+             "calc_locs": [],  # unnecessary, update during runtime
              "rlx_dir": "",  # unnecessary, update during runtime
              "ep0_dir": "",  # TODO: This is enveloped in CalLocs
              "ep1_dir": "",  # unnecessary, update during runtime
@@ -161,9 +146,6 @@ def get_wf_neb_from_structure(structure, path_sites,
     Returns:
         Workflow
     """
-    logger.info("Getting workflow from perfect structure.")
-
-    # Read in params.
     formula = structure.composition.reduced_formula
     wfname = wfname or datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S-%f')
     spec = spec or {}
@@ -181,7 +163,7 @@ def get_wf_neb_from_structure(structure, path_sites,
     for n in range(neb_round):
         fw = NEBFW(spec=spec,
                    name=formula,
-                   neb_label=str(n+1),
+                   neb_label=str(n + 1),
                    from_images=False,
                    vasp_input_set=None,
                    user_incar_settings=uis_neb[n],
@@ -226,7 +208,7 @@ def get_wf_neb_from_structure(structure, path_sites,
     fws = rlx_fws + neb_fws
     if neb_round > 1:
         for r in range(1, neb_round):
-            links[neb_fws[r-1]] = [neb_fws[r]]
+            links[neb_fws[r - 1]] = [neb_fws[r]]
 
     workflow = Workflow(fws, links_dict=links,
                         name="neb_{}".format(wfname))
@@ -259,9 +241,6 @@ def get_wf_neb_from_endpoints(endpoints=None,
     Returns:
         Workflow
     """
-    logger.info("Getting workflow from endpoints.")
-
-    # Read in params.
     if endpoints is not None:
         endpoints_dict = [s.as_dict() for s in endpoints]
     else:
@@ -279,7 +258,7 @@ def get_wf_neb_from_endpoints(endpoints=None,
     for n in range(neb_round):
         fw = NEBFW(spec=spec,
                    name=formula,
-                   neb_label=str(n+1),
+                   neb_label=str(n + 1),
                    from_images=False,
                    vasp_input_set=None,
                    user_incar_settings=uis_neb[n],
@@ -306,7 +285,7 @@ def get_wf_neb_from_endpoints(endpoints=None,
                  ep_fws[1]: [neb_fws[0]]}
         if neb_round > 1:
             for r in range(1, neb_round):
-                links[neb_fws[r-1]] = [neb_fws[r]]
+                links[neb_fws[r - 1]] = [neb_fws[r]]
 
         workflow = Workflow(fws, links_dict=links,
                             name="neb_{}".format(wfname))
@@ -334,9 +313,6 @@ def get_wf_neb_from_images(images=None,
     Returns:
         Workflow
     """
-    logger.info("Getting workflow from images.")
-
-    # Read in params.
     spec = spec or {}
     formula = images[0].composition.reduced_formula
     if images is not None:
@@ -367,27 +343,5 @@ def get_wf_neb_from_images(images=None,
     return workflow
 
 
-# def test_get_wf_neb_from_images():
-#     # test_dir = "/home/hat003/repos/atomate/atomate/vasp/" \
-#     #            "workflows/tests/test_files/neb_wf/1/inputs"
-#     test_dir = "/Users/hanmeiTang/repos/atomate/atomate/vasp" \
-#                "/workflows/tests/test_files/neb_wf/1/inputs"
-#     images = [Structure.from_file(os.path.join(test_dir, "{:02d}/POSCAR".format(i)))
-#               for i in range(5)]
-#     wfname = "images_wf"
-#
-#     wf = get_wf_neb_from_images(images, wfname, neb_round=1)
-#
-#     launchpad = LaunchPad.from_file(os.path.join(os.environ['HOME'],
-#                                                  '.fireworks',
-#                                                  'my_launchpad.yaml'))
-#     launchpad.add_wf(wf)
-
-
 if __name__ == "__main__":
-    from pymatgen.util.testing import PymatgenTest
-
-    # test_get_wf_neb_from_images()
-    # structures = [PymatgenTest.get_structure("Si")]
-    # wf = get_wf_neb(structures)
     pass

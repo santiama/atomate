@@ -10,7 +10,7 @@ sequences of VASP calculations.
 from fireworks.core.firework import Firework
 
 from pymatgen.io.vasp.sets import MPRelaxSet, MITMDSet, MITRelaxSet
-from pymatgen_diffusion.neb.io import MVLCINEBSet, MVLCINEBEndPointSet
+from pymatgen_diffusion.neb.io import MVLCINEBEndPointSet, MVLCINEBSet
 
 from atomate.common.firetasks.glue_tasks import PassCalcLocs
 from atomate.vasp.firetasks.glue_tasks import CopyVaspOutputs, PassEpsilonTask, PassNormalmodesTask
@@ -502,6 +502,8 @@ class NEBFW(Firework):
         # Task 2: Run NEB using Custodian
         run_neb_task = RunVaspCustodian(vasp_cmd=vasp_cmd,
                                         gamma_vasp_cmd=gamma_vasp_cmd,
+                                        handler_group="no_handler",  # TODO
+                                        gzip_output=False,  # must be false
                                         job_type="neb", **cust_args)
 
         # Task 3: PassCalLocs

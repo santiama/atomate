@@ -150,8 +150,12 @@ class RunVaspCustodian(FiretaskBase):
             jobs = VaspJob.full_opt_run(vasp_cmd, auto_npar=auto_npar, ediffg=self.get("ediffg"),
                                         max_steps=5, half_kpts_first_relax=False)
         elif job_type == "neb":
-            jobs = [VaspNEBJob(vasp_cmd, auto_npar=False, final=False,
-                               auto_gamma=True, half_kpts=True,
+            jobs = [VaspNEBJob(vasp_cmd, output_file="neb_vasp.out",
+                               stderr_file="neb_std_err.txt",
+                               suffix="", final=False,
+                               auto_npar=self.get("auto_npar", False),
+                               half_kpts=True, auto_gamma=True,
+                               auto_continue=False,
                                gamma_vasp_cmd=gamma_vasp_cmd)]
         else:
             raise ValueError("Unsupported job type: {}".format(job_type))
@@ -166,6 +170,9 @@ class RunVaspCustodian(FiretaskBase):
             handlers.append(WalltimeHandler(wall_time=self["wall_time"]))
 
         validators = [VasprunXMLValidator(), VaspFilesValidator()]
+        if job_type == "neb":
+            # CINEB vasprun.xml sometimes incomplete, file structure different
+            validators = [] # TODO: modify custodian validator
 
         c = Custodian(handlers, jobs, validators=validators, max_errors=max_errors,
                       scratch_dir=scratch_dir, gzipped_output=gzip_output)
@@ -424,4 +431,4 @@ class RunNEBVaspFake(FiretaskBase):
                 if os.path.isfile(full_file_name):
                     shutil.copy(full_file_name, u_dir)
 
-        logger.info("RunNEBVaspFake: ran fake VASP, generated outputs.")
+        logger.info("RunNEBVaspFake: ran fake VASP for neb, generated outputs.")

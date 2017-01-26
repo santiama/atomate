@@ -424,7 +424,6 @@ def wf_nudged_elastic_band(structures, config=None):
         if neb_round == 0:
             raise ValueError("No NEB fireworks in config file!")
         if len(structures) == 1:
-            print(len(fw_list), neb_round, is_optimized)
             if not is_optimized and len(fw_list) - neb_round == 3:
                 mode = 1
             elif is_optimized and len(fw_list) - neb_round == 2:
