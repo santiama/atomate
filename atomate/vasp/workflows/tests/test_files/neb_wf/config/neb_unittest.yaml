@@ -1,11 +1,9 @@
-# A standard CI-NEB calculation
+# A testing CI-NEB calculation
 fireworks:
 - fw: atomate.vasp.fireworks.core.NEBRelaxationFW
   params:
     parents: 0
   user_incar_settings:
-    EDIFF: 5e-5
-    EDIFFG: -0.05
     ISIF: 3
     LDAU: False
 - fw: atomate.vasp.fireworks.core.NEBRelaxationFW  # Two endpoints settings are the same
@@ -14,21 +12,17 @@ fireworks:
   user_incar_settings:
     EDIFF: 5e-5
     EDIFFG: -0.05
-    ISIF: 2
-    LDAU: False
 - fw: atomate.vasp.fireworks.core.NEBRelaxationFW
   params:
     parents: 1
   user_incar_settings:
     EDIFF: 5e-5
     EDIFFG: -0.05
-    ISIF: 2
-    LDAU: False
 - fw: atomate.vasp.fireworks.core.NEBFW
   params:
     parents: [2, 3]
   user_incar_settings:
-    EDIFFG: -0.08
+    EDIFFG: -0.05
     IOPT: 3
     ISIF: 2
     LDAU: False
@@ -36,7 +30,7 @@ fireworks:
   params:
     parents: 4
   user_incar_settings:
-    EDIFFG: -0.05
+    EDIFFG: -0.03
     IOPT: 1
     ISIF: 2
     LDAU: False
@@ -45,14 +39,14 @@ is_optimized: False
 
 common_params:  # These can update spec_orig in neb.py
   wfname: CINEB
-  vasp_cmd: ">>vasp_cmd<<"
-  gamma_vasp_cmd: ">>gamma_vasp_cmd<<"
+  vasp_cmd: world
+  gamma_vasp_cmd: world_gam
   mpi_command:
-    command: mpirun
-    np_tag: "np_tag"
+    command: echo
+    np_tag: hello
   ppn: 24
-  path_sites: []
+  path_sites: [0, 1]
   db_file: ">>db_file<<"
-  _category: "tscc-atomate"
+  _category: atomate_neb
   _queueadapter:
     nnodes: 1  # This is subject to change

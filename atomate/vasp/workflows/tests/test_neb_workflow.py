@@ -2,10 +2,11 @@
 
 from __future__ import division, print_function, unicode_literals, absolute_import
 
-import json
+import yaml
 import os
 import shutil
 import unittest
+import copy
 import numpy as np
 
 from pymongo import MongoClient
@@ -41,7 +42,10 @@ VASP_CMD = None
 class TestNudgedElasticBandWorkflow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        """Basic check for pymatgen configurations."""
+        """
+        1) Basic check for pymatgen configurations.
+        2) Setup all test workflows.
+        """
         if not SETTINGS.get("PMG_VASP_PSP_DIR"):
             SETTINGS["PMG_VASP_PSP_DIR"] = os.path.join(module_dir,
                                                         "..", "..", "tests",
@@ -56,30 +60,33 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
 
         # Run a fake vasp command instead of "mpirun -np $NCPUS vasp"
         # Instead 'echo hello 24 world' as a Fake Vasp command
-        cls.config_1 = {"wfname": "unittest_1",
-                          "path_sites": [0, 1],
-                          "vasp_cmd": "world",
-                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
+        test_yaml = "./test_files/neb_wf/config/neb_unittest.yaml"
+        with open(test_yaml, 'r') as stream:
+            cls.config = yaml.load(stream)
 
-        cls.config_2 = {"wfname": "unittest_2",
-                          "path_sites": [0, 1],
-                          "vasp_cmd": "world",
-                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
-        cls.config_3 = {"wfname": "unittest_3",
-                          "vasp_cmd": "world",
-                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
-        cls.config_4 = {"wfname": "unittest_4",
-                          "vasp_cmd": "world",
-                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
-        cls.config_5 = {"wfname": "unittest_5",
-                          "vasp_cmd": "world",
-                          "mpi_command": {"command": "echo", "np_tag": "hello"}}
+        # Workflow tests of 5 modes
+        cls.config_1 = copy.deepcopy(cls.config)
+        cls.config_1["is_optimized"] = False
 
-        # Workflow for 5 modes
+        cls.config_2 = copy.deepcopy(cls.config)
+        del cls.config_2["fireworks"][0]
+        cls.config_2["is_optimized"] = True
+
+        cls.config_3 = copy.deepcopy(cls.config)
+        del cls.config_3["fireworks"][0]
+        cls.config_3["is_optimized"] = False
+
+        cls.config_4 = copy.deepcopy(cls.config_3)
+        del cls.config_4["fireworks"][0: 3]
+        cls.config_4["is_optimized"] = True
+
+        cls.config_5 = copy.deepcopy(cls.config)
+        del cls.config_5["fireworks"][0: 3]
+
         cls.wf_1 = wf_nudged_elastic_band(cls.structures[0], cls.config_1)
         cls.wf_2 = wf_nudged_elastic_band(cls.structures[0], cls.config_2)
-        cls.wf_3 = wf_nudged_elastic_band(cls.structures[: 2], cls.config_3)
-        cls.wf_4 = wf_nudged_elastic_band(cls.structures[: 2], cls.config_4)
+        cls.wf_3 = wf_nudged_elastic_band(cls.structures[0:2], cls.config_3)
+        cls.wf_4 = wf_nudged_elastic_band(cls.structures[0:2], cls.config_4)
         cls.wf_5 = wf_nudged_elastic_band(cls.structures, cls.config_5)
 
     def setUp(self):
@@ -188,11 +195,11 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
     #         np.testing.assert_allclose(raman_tensor["1"], d["raman_tensor"]["1"], rtol=1e-5)
 
     def test_wf(self):
-        self.wf = self._simulate_vasprun(self.wf)
+        self.wf = self._simulate_vasprun(self.wf_5)
 
         # self.assertEqual(len(self.wf.fws), len(self.raman_config["modes"]) * 2 + 3)
         #
-        self.lp.add_wf(self.wf)
+        self.lp.add_wf(self.wf_5)
 
         rapidfire(self.lp, fworker=FWorker(env={}))
 

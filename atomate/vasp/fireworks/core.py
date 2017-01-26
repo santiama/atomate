@@ -44,7 +44,8 @@ class OptimizeFW(Firework):
             \*\*kwargs: Other kwargs that are passed to Firework.__init__.
         """
         override_default_vasp_params = override_default_vasp_params or {}
-        vasp_input_set = vasp_input_set or MPRelaxSet(structure, force_gamma=force_gamma,  **override_default_vasp_params)
+        vasp_input_set = vasp_input_set or MPRelaxSet(structure, force_gamma=force_gamma,
+                                                      **override_default_vasp_params)
 
         t = []
         t.append(WriteVaspFromIOSet(structure=structure, vasp_input_set=vasp_input_set))
@@ -184,10 +185,10 @@ class LepsFW(Firework):
             if copy_vasp_outputs:
                 t.append(CopyVaspOutputs(calc_loc=True, additional_files=["CHGCAR"], contcar_to_poscar=True))
                 t.append(WriteVaspStaticFromPrev(prev_calc_dir=".", lepsilon=True,
-                other_params={'user_incar_settings': user_incar_settings}))
+                                                 other_params={'user_incar_settings': user_incar_settings}))
         else:
             vasp_input_set = MPStaticSet(structure, lepsilon=True,
-                                         user_incar_settings = user_incar_settings)
+                                         user_incar_settings=user_incar_settings)
             t.append(WriteVaspFromIOSet(structure=structure, vasp_input_set=vasp_input_set))
 
         if phonon:
@@ -406,15 +407,22 @@ class NEBRelaxationFW(Firework):
         logger.info("Relaxation Firework in NEB Workflow.")
 
         # Get structure from spec
+        spec = spec or {}
+        cust_args = cust_args or {}
+        # kwargs = kwargs or {}  # TODO: can I remove this?
         if "{}_st".format(st_label) not in spec:
             raise ValueError("Required structures "
-                             "{} not found in spec!".format(st_label))
+                             "{}_st not found in spec!".format(st_label))
         if st_label in ["rlx", "ep0", "ep1"]:
-            structure = Structure.from_dict(spec["{}_st".format(st_label)])
+            try:
+                structure = Structure.from_dict(spec["{}_st".format(st_label)])
+            except:
+                structure = spec["{}_st".format(st_label)]
+
             if st_label == 'rlx' and vasp_input_set is None:
-                vasp_input_set = MITRelaxSet
+                vasp_input_set = MITRelaxSet(structure)
             if st_label in ["ep0", "ep1"] and vasp_input_set is None:
-                vasp_input_set = MVLCINEBEndPointSet
+                vasp_input_set = MVLCINEBEndPointSet(structure)
         else:
             raise ValueError("Unsupported structure label! "
                              "Choose from \'rlx\', \'ep0\' and \'ep1\'.")

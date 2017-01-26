@@ -55,35 +55,53 @@ spec_orig = {"neb_id": 0,  # considering....
              "images": []}  # otherwise unnecessary, update during runtime
 
 
-def _update_spec_from_inputs(spec, path_sites=None,
+def _update_spec_from_inputs(spec,
+                             structure=None, path_sites=None,
                              endpoints=None, images=None):
     """
     Update spec according to inputs.
 
     Args:
+        spec(dict): original spec
+        structure (Structure/dict): perfect cell structure.
         path_sites ([int, int]): Indicating pathway site indexes.
-        endpoints ([ep0_dict, ep1_dict]): The two endpoints structures.
+        endpoints ([Structure/dict]): The two endpoints [ep0, ep1].
         images ([s0_dict, s1_dict, ...]): The image structures,
             including the two endpoints.
     """
     s = spec_orig.copy()
     s.update(spec)
 
+    if structure is not None:
+        if isinstance(structure, Structure):
+            s["rlx_st"] = structure.as_dict()
+        elif isinstance(structure, dict):
+            s["rlx_st"] = structure
+        else:
+            raise TypeError("Unable to parse the given structure!")
+
     if path_sites is not None:
-        s["path_sites"] = path_sites
+        if isinstance(path_sites, list) and len(path_sites) == 2:
+            s["path_sites"] = path_sites
+        else:
+            raise TypeError("path_sites should be a list!")
 
     if endpoints is not None:
-        s["ep0_st"] = endpoints[0].as_dict()
-        s["ep1_st"] = endpoints[1].as_dict()
+        try:
+            s["ep0_st"] = endpoints[0].as_dict()
+            s["ep1_st"] = endpoints[1].as_dict()
+        except:
+            s["ep0_st"] = endpoints[0]
+            s["ep1_st"] = endpoints[1]
 
     if images is not None:
         if len(images) <= 2:
             raise ValueError("Too few images!")
         s["images"] = images
         n_images = len(images) - 2
-        s["_queueadapter"].update({"nnodes": n_images})
+        s["_queueadapter"].update({"nnodes": str(n_images)})
 
-        return s
+    return s
 
 
 def _get_mpi_command(spec, vasp):  # TODO: Enable setting using >>my_vasp_cmd<<
@@ -107,7 +125,7 @@ def _get_mpi_command(spec, vasp):  # TODO: Enable setting using >>my_vasp_cmd<<
 
     nnodes = spec["_queueadapter"]["nnodes"]
     ppn = spec["ppn"]
-    ncpu = nnodes * ppn
+    ncpu = int(nnodes) * int(ppn)
 
     mpi_cmd = spec["mpi_command"]["command"]
     np_tag = spec["mpi_command"]["np_tag"]
@@ -155,6 +173,8 @@ def get_wf_neb_from_structure(structure, path_sites,
     uis_neb = uis_neb or []
     vasp_cmd = _get_mpi_command(spec, "std")
     gamma_vasp_cmd = _get_mpi_command(spec, "gam")
+    endpoints = get_endpoints_from_index(structure, path_sites)
+    eps_dict = [e.as_dict() for e in endpoints]  # pseudo endpoints
 
     # Get neb fireworks.
     neb_fws = []
@@ -172,8 +192,6 @@ def get_wf_neb_from_structure(structure, path_sites,
 
     # Get relaxation fireworks.
     if is_optimized:
-        endpoints = get_endpoints_from_index(structure, path_sites)
-        eps_dict = [e.as_dict() for e in endpoints]
         spec = _update_spec_from_inputs(spec, endpoints=eps_dict)
         rlx_fws = [NEBRelaxationFW(spec=spec,
                                    st_label="ep{}".format(i),
@@ -187,7 +205,11 @@ def get_wf_neb_from_structure(structure, path_sites,
         links = {rlx_fws[0]: [neb_fws[0]],
                  rlx_fws[1]: [neb_fws[0]]}
     else:
-        spec = _update_spec_from_inputs(spec, path_sites=path_sites)
+        spec = _update_spec_from_inputs(spec,
+                                        structure=structure,
+                                        path_sites=path_sites,
+                                        endpoints=eps_dict)
+
         rlx_fws = [NEBRelaxationFW(spec=spec,
                                    st_label="{}".format(label),
                                    name=formula,
@@ -202,8 +224,9 @@ def get_wf_neb_from_structure(structure, path_sites,
 
     # Append Firework links.
     fws = rlx_fws + neb_fws
-    for r in range(neb_round):
-        links[neb_fws[r]] = [neb_fws[r + 1]]
+    if neb_round > 1:
+        for r in range(1, neb_round):
+            links[neb_fws[r-1]] = [neb_fws[r]]
 
     workflow = Workflow(fws, links_dict=links,
                         name="neb_{}".format(wfname))
@@ -281,8 +304,9 @@ def get_wf_neb_from_endpoints(endpoints=None,
         fws = ep_fws + neb_fws
         links = {ep_fws[0]: [neb_fws[0]],
                  ep_fws[1]: [neb_fws[0]]}
-        for r in range(neb_round):
-            links[neb_fws[r]] = [neb_fws[r + 1]]
+        if neb_round > 1:
+            for r in range(1, neb_round):
+                links[neb_fws[r-1]] = [neb_fws[r]]
 
         workflow = Workflow(fws, links_dict=links,
                             name="neb_{}".format(wfname))
