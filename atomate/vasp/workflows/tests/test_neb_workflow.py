@@ -7,7 +7,6 @@ import os
 import shutil
 import unittest
 import copy
-import numpy as np
 
 from pymongo import MongoClient
 
@@ -19,24 +18,23 @@ from atomate.vasp.powerups import use_fake_vasp
 from atomate.vasp.workflows.presets.core import wf_nudged_elastic_band
 
 from pymatgen import SETTINGS
+from pymatgen.core import Structure
 from pymatgen.util.testing import PymatgenTest
 
 __author__ = "Hanmei Tang, Iek-Heng Chu"
 __email__ = 'hat003@eng.ucsd.edu, ihchu@eng.ucsd.edu'
 
 module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+# TODO: Modify this after testing
 # db_dir = os.path.join(module_dir, "..", "..", "..", "common",
 #                       "reference_files", "db_connections")
-# TODO: Note this unit test will reset launchpad!
-# TODO: To fix this, set a open local MongoDB database for testing!
-db_dir = os.path.join(os.environ["HOME"], ".fireworks")  # TODO: Modify this after testing
+db_dir = os.path.join(os.environ["HOME"], ".fireworks")
 ref_dir = os.path.join(module_dir, "test_files")
 
 # If true, retains the database and output dirs at the end of the test
-# DEBUG_MODE = False
-# TODO: useless...
-# If None, runs a "fake VASP". Otherwise, runs VASP with this command...
-VASP_CMD = None
+# DEBUG_MODE = False  # TODO: looks useless..
+LAUNCHPAD_RESET = False
+USE_FAKE_VASP = True
 
 
 class TestNudgedElasticBandWorkflow(unittest.TestCase):
@@ -55,12 +53,19 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
                   'your ~/.pmgrc.yaml file.')
 
         # Use the three same Si structures as fake image structures
-        cls.structures = [PymatgenTest.get_structure("Si")] * 3
+        # cls.structures = [PymatgenTest.get_structure("Si")] * 3
+        hat003_temp = "/Users/hanmeiTang/repos/atomate/atomate/" \
+                      "vasp/workflows/tests/test_files/neb_wf/5"
+        cls.structures = [Structure.from_file(os.path.join(hat003_temp,
+                                                           "{0:02d}".format(i),
+                                                           "POSCAR"))
+                          for i in range(3)]
         cls.scratch_dir = os.path.join(module_dir, "scratch")
 
-        # Run a fake vasp command instead of "mpirun -np $NCPUS vasp"
-        # Instead 'echo hello 24 world' as a Fake Vasp command
-        test_yaml = "./test_files/neb_wf/config/neb_unittest.yaml"
+        fake_cmd_yaml = "./test_files/neb_wf/config/neb_unittest.yaml"
+        vasp_cmd_yaml = "./test_files/neb_wf/config/neb_unittest_vasp.yaml"
+        test_yaml = fake_cmd_yaml if USE_FAKE_VASP else vasp_cmd_yaml
+
         with open(test_yaml, 'r') as stream:
             cls.config = yaml.load(stream)
 
@@ -100,7 +105,8 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
         os.chdir(self.scratch_dir)
         try:
             self.lp = LaunchPad.from_file(os.path.join(db_dir, "my_launchpad.yaml"))
-            self.lp.reset("", require_password=False)
+            if LAUNCHPAD_RESET:
+                self.lp.reset("", require_password=False)
         except:
             raise unittest.SkipTest(
                 'Cannot connect to MongoDB! Is the database server running? '
@@ -126,10 +132,8 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
 
         """
         test_dir = os.path.abspath(os.path.join(ref_dir, "neb_wf"))
-        neb_ref_dirs = {"perfect cell relaxation": os.path.join(test_dir, "1"),
-                        "endpoint relaxation": os.path.join(test_dir, "2"),
-                        "NEB": os.path.join(test_dir, "3")}
-        # TODO: modify use_fake_vasp
+        neb_ref_dirs = {"neb1_Si": os.path.join(test_dir, "4")}
+
         return use_fake_vasp(wf, neb_ref_dirs, params_to_check=["ENCUT"])
 
     def test_get_mpi_command(self):
@@ -195,10 +199,16 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
     #         np.testing.assert_allclose(raman_tensor["1"], d["raman_tensor"]["1"], rtol=1e-5)
 
     def test_wf(self):
-        self.wf = self._simulate_vasprun(self.wf_5)
+        self.wf_1 = self._simulate_vasprun(self.wf_1)
+        self.wf_2 = self._simulate_vasprun(self.wf_2)
+        self.wf_3 = self._simulate_vasprun(self.wf_3)
+        self.wf_4 = self._simulate_vasprun(self.wf_4)
+        self.wf_5 = self._simulate_vasprun(self.wf_5)
 
-        # self.assertEqual(len(self.wf.fws), len(self.raman_config["modes"]) * 2 + 3)
-        #
+        self.lp.add_wf(self.wf_1)
+        self.lp.add_wf(self.wf_2)
+        self.lp.add_wf(self.wf_3)
+        self.lp.add_wf(self.wf_4)
         self.lp.add_wf(self.wf_5)
 
         rapidfire(self.lp, fworker=FWorker(env={}))

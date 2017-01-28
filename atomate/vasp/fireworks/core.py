@@ -464,7 +464,6 @@ class NEBFW(Firework):
                  name="composition",
                  neb_label="1",
                  from_images=True,
-                 vasp_input_set=None,
                  user_incar_settings=None,
                  vasp_cmd=">>vasp_cmd<<",
                  gamma_vasp_cmd=">>gamma_vasp_cmd<<",
@@ -476,9 +475,8 @@ class NEBFW(Firework):
             from_images (bool): Set True to initialize from image structures,
                                 False starting from relaxed endpoint structures.
             name(str): A descriptive name for this fireworks
-            vasp_input_set (VaspInputSet): Input set to use.
             user_incar_settings (dict): Additional INCAR settings.
-            vasp_cmd (str): Command to run vasp.
+            vasp_cmd (str): Command to run vasp using mpi program.
             gamma_vasp_cmd (str): Command to run vasp gamma.
             cust_args (dict): Other kwargs that are passed to RunVaspCustodian.
             \*\*kwargs: Other kwargs that are passed to Firework.__init__.
@@ -490,14 +488,15 @@ class NEBFW(Firework):
         cust_args = cust_args or {}
 
         if from_images:
+            defaults = {"IMAGES": spec["_queueadapter"]["nnodes"]}
+            defaults.update(incar)
             images = [Structure.from_dict(s) for s in spec["images"]]
-            vasp_input_set = vasp_input_set or MVLCINEBSet(structures=images)
-            write_neb_task = WriteNEBFromImages(
-                vasp_input_set=vasp_input_set,
-                user_incar_settings=incar)
-        else:  # TODO: from endpoint doesn't support vasp_input_set customization?
+            vasp_input_set = MVLCINEBSet(structures=images,
+                                         user_incar_settings=defaults)
+            write_neb_task = WriteNEBFromImages(vasp_input_set=vasp_input_set)
+        else:
             write_neb_task = WriteNEBFromEndpoints(
-                user_incar_settings=incar)
+                user_incar_settings=user_incar_settings)
 
         # Task 2: Run NEB using Custodian
         run_neb_task = RunVaspCustodian(vasp_cmd=vasp_cmd,
@@ -505,13 +504,11 @@ class NEBFW(Firework):
                                         handler_group="no_handler",  # TODO
                                         gzip_output=False,  # must be false
                                         job_type="neb", **cust_args)
-
         # Task 3: PassCalLocs
         tasks = [write_neb_task,
-                 run_neb_task,
+                 run_neb_task,  # TODO: why PassCalcLocs doesn't work, got empty list
                  PassCalcLocs(name="neb_dir_{}".format(neb_label))]
 
-        super(NEBFW, self).__init__(tasks,
-                                    spec=spec,
+        super(NEBFW, self).__init__(tasks, spec=spec,
                                     name="neb{}_{}".format(neb_label, name),
                                     **kwargs)

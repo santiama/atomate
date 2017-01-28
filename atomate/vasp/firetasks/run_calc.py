@@ -430,5 +430,4 @@ class RunNEBVaspFake(FiretaskBase):
                 full_file_name = os.path.join(r_dir, file_name)
                 if os.path.isfile(full_file_name):
                     shutil.copy(full_file_name, u_dir)
-
         logger.info("RunNEBVaspFake: ran fake VASP for neb, generated outputs.")

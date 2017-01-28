@@ -320,7 +320,7 @@ class WriteTransmutedStructureIOSet(FiretaskBase):
                 transformations.append(t_obj)
 
         structure = self['structure'] if 'prev_calc_dir' not in self else \
-                Poscar.from_file(os.path.join(self['prev_calc_dir'], 'POSCAR')).structure
+            Poscar.from_file(os.path.join(self['prev_calc_dir'], 'POSCAR')).structure
         ts = TransformedStructure(structure)
         transmuter = StandardTransmuter([ts], transformations)
         final_structure = transmuter.transformed_structures[-1].final_structure.copy()
@@ -369,82 +369,54 @@ class WriteNEBFromImages(FiretaskBase):
 
     Required parameters:
         vasp_input_set (AbstractVaspInputSet): full VaspInputSet object
+            user_incar_settings and structures should be included.
 
     Optional parameters:
-        user_incar_settings (dict): additional INCAR settings.
-        images (list[str]): list of files of image structures,
-            including the two endpoints.
+        None
 
     fw_spec:
         images (list[dict]): list of image structure dict,
             including the two endpoints.
     """
     required_params = ["vasp_input_set"]
-    optional_params = ["images", "user_incar_settings"]
+    optional_params = []
 
     def run_task(self, fw_spec):
         logger.info("WriteNEBFromImages")
 
-        user_incar_settings = self.get("user_incar_settings", {})
-        if "images" in self:
-            images = [Structure.from_file(i) for i in self["images"]]
-        else:
-            try:
-                images = [Structure.from_dict(i) for i in fw_spec["images"]]
-            except:
-                images = fw_spec["images"]
-
-        # Check images consistence.
-        atomic_numbers = images[0].atomic_numbers
-        for i in images:
-            if i.atomic_numbers != atomic_numbers:
-                raise ValueError("Images are inconsistent!")
-
-        # Set INCAR.
-        nimages = fw_spec["_queueadapter"]["nnodes"]
-        defaults = {"IMAGES": nimages}
-        defaults.update(user_incar_settings)
-
         # Check vasp_input_set.
-        # if a full VaspInputSet object was provided
         if hasattr(self['vasp_input_set'], 'write_input'):
             vis = self['vasp_input_set']
-
-        # if VaspInputSet String + parameters was provided
+            vis.write_input(output_dir=".")
         else:
-            vis_cls = load_class("pymatgen_diffusion.neb.io", self["vasp_input_set"])
-            vis = vis_cls(self["structures"], **self.get("vasp_input_params", images))
-
-        vis.write_input(output_dir=".")
+            raise TypeError("Unsupported input set!")
 
 
 @explicit_serialize
 class WriteNEBFromEndpoints(FiretaskBase):
     """
     Generate CI-NEB input sets using endpoint structures.
+    MVLCINEBSet is the only vasp_input_set supported now.
+
     The number of images:
         1) search in "user_incar_settings";
         2) otherwise, calculate using "image_dist".
 
-    Required parameters:
-        None
-
     Optional parameters:
-        vasp_input_set (AbstractVaspInputSet): full VaspInputSet object
-        endpoints (list of path str): Eg. ["E0/POSCAR", "E1/POSCAR"]
         user_incar_settings (dict): additional INCAR settings.
         sort_tol (float): Distance tolerance (in Angstrom) used to match the atomic
                     indices between start and end structures. If it is set 0, then
                     no sorting will be performed.
         image_dist (float): distance in Angstrom, used in calculating number of images.
                             Default 0.7 Angstrom.
-
-    fw_spec:
+        interp_method (str): method to do image interpolation from two endpoints
+                            Choose from ["linear"], default "linear"
     """
 
     required_params = []
-    optional_params = ["vasp_input_set", "endpoint_files",
-                       "user_incar_settings", "sort_tol", "image_dist"]
+    optional_params = ["user_incar_settings",
+                       "sort_tol", "image_dist",
+                       "interp_method"]
 
     def run_task(self, fw_spec):
         logger.info("WriteNEBSetFromEndpoints")
@@ -452,34 +424,38 @@ class WriteNEBFromEndpoints(FiretaskBase):
         self._set_params(fw_spec)
 
         # Get number of images.
-        user_incar_settings = self.user_incar_settings
+        user_incar_settings = self.get("user_incar_settings", {})
         if "IMAGES" in user_incar_settings:
             nimages = user_incar_settings["IMAGES"]
         else:
             nimages = self._get_nimages()
 
-        image_files = []
-        images = self._get_images_by_linear_interp(nimages=nimages)
-        images = [i.as_dict() for i in images]
-        fw_spec.update({"images": images})
-        vasp_input_set = self.get("vasp_input_set", MVLCINEBSet(images))
+        if self.interp_method == "linear":  # TODO: Add IDPP
+            images = self._get_images_by_linear_interp(nimages=nimages)
+        else:
+            raise ValueError("Unknown interpolation method!")
 
-        write = WriteNEBFromImages(vasp_input_set=vasp_input_set,
-                                   user_incar_settings=user_incar_settings)
+        images_dict = [i.as_dict() for i in images]
+        fw_spec.update({"images": images_dict})
+        vis = MVLCINEBSet(structures=images,
+                          user_incar_settings=user_incar_settings)
 
-        write.run_task(fw_spec=fw_spec)  # TODO: Double check
+        write = WriteNEBFromImages(vasp_input_set=vis)
+
+        write.run_task(fw_spec=fw_spec)  # TODO: check this
 
     def _set_params(self, fw_spec):
-        if "endpoint_files" in self:
-            self.ep_0 = Structure.from_file(self["endpoint_files"][0])
-            self.ep_1 = Structure.from_file(self["endpoint_files"][1])
-        else:
+        try:
             self.ep_0 = Structure.from_dict(fw_spec["ep0_st"])
             self.ep_1 = Structure.from_dict(fw_spec["ep1_st"])
+        except:
+            self.ep_0 = fw_spec["ep0_st"]
+            self.ep_1 = fw_spec["ep1_st"]
 
         self.user_incar_settings = self.get("user_incar_settings", {})
         self.image_dist = self.get("image_dist", 0.7)
         self.sort_tol = self.get("sort_tol", 0)
+        self.interp_method = self.get("interp_method", "linear")
 
     def _get_nimages(self):
         """
