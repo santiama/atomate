@@ -21,6 +21,7 @@ from decimal import Decimal
 import numpy as np
 
 from pymatgen import MPRester
+from pymatgen.core import Structure
 from pymatgen.io.vasp.sets import get_vasprun_outcar
 from pymatgen.analysis.elasticity import reverse_voigt_map
 
@@ -292,3 +293,74 @@ class PassNormalmodesTask(FiretaskBase):
                                "eigenvecs": normalmode_eigenvecs.tolist(),
                                "norms": normalmode_norms.tolist()}
         return FWAction(mod_spec=[{'_set': {'normalmodes': normalmode_dict}}])
+
+
+@explicit_serialize
+class ChdirTask(FiretaskBase):
+    """
+    Change directory to target directory.
+    """
+    required_params = ["target_dir"]
+
+    def run_task(self, fw_spec):
+        target_dir = self["target_dir"]
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+
+        os.chdir(target_dir)
+
+
+@explicit_serialize
+class CopyFolderTask(FiretaskBase):
+    """
+    Copy folder with sub-folders to target directory.
+    """
+    required_params = ["source_dir", "target_dir"]
+
+    def run_task(self, fw_spec):
+        import shutil
+        src = self["source_dir"]
+        dst = self["target_dir"]
+
+        shutil.copytree(src, dst)
+
+
+@explicit_serialize
+class UpdateSpecTask(FiretaskBase):
+    """
+    Change directory to target directory.
+
+    Required params:
+        label (str): label denotes calculation.
+            Choose from ["ini", "ep0", "ep1", "neb1", "neb2", ...]
+    """
+    required_params = ["label"]
+
+    def run_task(self, fw_spec):
+
+        label = self["label"]
+        assert label in ["ini", "ep0", "ep1", "neb1", "neb2", "neb3"]
+        path = fw_spec["calc_locs"][label]
+
+        if label in ["ini", "ep0", "ep1"]:
+            file = glob.glob(os.path.join(path, "CONTCAR*"))[0]
+            structure = Structure.from_file(file)
+            s_dict = structure.as_dict()
+            update_spec = {"_st".format(label): s_dict}
+
+        else:  # neb
+            n_images = int(fw_spec["_queueadapter"]["nnodes"])
+            images_files = glob.glob(os.path.join(path, "[0-9][0-9]", "CONTCAR*"))
+            images_files.sort()
+
+            ep0_file = glob.glob(os.path.join(path, "00", "POSCAR*"))
+            ep1_file = glob.glob(os.path.join(path, "{:02d}".format(n_images+1), "POSCAR*"))
+
+            files = ep0_file + images_files + ep1_file
+            images = [Structure.from_file(f) for f in files]
+            image_dict = [i.as_dict() for i in images]
+            neb = fw_spec.get("neb")
+            neb.append(image_dict)
+            update_spec = {"neb": neb}
+
+        return FWAction(update_spec=update_spec)

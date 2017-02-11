@@ -51,10 +51,11 @@ class WriteVaspFromIOSet(FiretaskBase):
             {"user_incar_settings": ...}.
             This setting is ignored if you provide the full object
             representation of a VaspInputSet rather than a String.
+        output_dir (str): output directory
     """
 
     required_params = ["structure", "vasp_input_set"]
-    optional_params = ["vasp_input_params"]
+    optional_params = ["vasp_input_params", "output_dir"]
 
     def run_task(self, fw_spec):
         # if a full VaspInputSet object was provided
@@ -65,7 +66,9 @@ class WriteVaspFromIOSet(FiretaskBase):
         else:
             vis_cls = load_class("pymatgen.io.vasp.sets", self["vasp_input_set"])
             vis = vis_cls(self["structure"], **self.get("vasp_input_params", {}))
-        vis.write_input(".")
+
+        output_dir = self.get("output_dir", ".")
+        vis.write_input(output_dir=output_dir)
 
 
 @explicit_serialize
@@ -372,14 +375,14 @@ class WriteNEBFromImages(FiretaskBase):
             user_incar_settings and structures should be included.
 
     Optional parameters:
-        None
+        output_dir (str): output directory.
 
     fw_spec:
         images (list[dict]): list of image structure dict,
             including the two endpoints.
     """
     required_params = ["vasp_input_set"]
-    optional_params = []
+    optional_params = ["output_dir"]
 
     def run_task(self, fw_spec):
         logger.info("WriteNEBFromImages")
@@ -387,7 +390,8 @@ class WriteNEBFromImages(FiretaskBase):
         # Check vasp_input_set.
         if hasattr(self['vasp_input_set'], 'write_input'):
             vis = self['vasp_input_set']
-            vis.write_input(output_dir=".")
+            output_dir = self.get("output_dir", ".")
+            vis.write_input(output_dir=output_dir)
         else:
             raise TypeError("Unsupported input set!")
 
@@ -401,9 +405,12 @@ class WriteNEBFromEndpoints(FiretaskBase):
     The number of images:
         1) search in "user_incar_settings";
         2) otherwise, calculate using "image_dist".
+    Required parameters:
+        structures ([Structures]): endpoints list
 
     Optional parameters:
         user_incar_settings (dict): additional INCAR settings.
+        output_dir (str): output directory.
         sort_tol (float): Distance tolerance (in Angstrom) used to match the atomic
                     indices between start and end structures. If it is set 0, then
                     no sorting will be performed.
@@ -413,8 +420,8 @@ class WriteNEBFromEndpoints(FiretaskBase):
                             Choose from ["linear"], default "linear"
     """
 
-    required_params = []
-    optional_params = ["user_incar_settings",
+    required_params = ["structures"]
+    optional_params = ["user_incar_settings", "output_dir",
                        "sort_tol", "image_dist",
                        "interp_method"]
 
@@ -439,8 +446,8 @@ class WriteNEBFromEndpoints(FiretaskBase):
         fw_spec.update({"images": images_dict})
         vis = MVLCINEBSet(structures=images,
                           user_incar_settings=user_incar_settings)
-
-        write = WriteNEBFromImages(vasp_input_set=vis)
+        output_dir = self.get("output_dir", ".")
+        write = WriteNEBFromImages(vasp_input_set=vis, output_dir=output_dir)
 
         write.run_task(fw_spec=fw_spec)  # TODO: check this
 

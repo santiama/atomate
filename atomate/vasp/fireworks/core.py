@@ -13,7 +13,8 @@ from pymatgen.io.vasp.sets import MPRelaxSet, MITMDSet, MITRelaxSet
 from pymatgen_diffusion.neb.io import MVLCINEBEndPointSet, MVLCINEBSet
 
 from atomate.common.firetasks.glue_tasks import PassCalcLocs
-from atomate.vasp.firetasks.glue_tasks import CopyVaspOutputs, PassEpsilonTask, PassNormalmodesTask
+from atomate.vasp.firetasks.glue_tasks import CopyVaspOutputs, PassEpsilonTask, \
+    PassNormalmodesTask, ChdirTask, CopyFolderTask, UpdateSpecTask
 from atomate.vasp.firetasks.parse_outputs import VaspToDbTask, BoltztrapToDBTask
 from atomate.vasp.firetasks.run_calc import RunVaspCustodian, RunBoltztrap
 from atomate.vasp.firetasks.write_inputs import *
@@ -381,20 +382,17 @@ class NEBRelaxationFW(Firework):
             and generates input sets.
     Task 2) Run VASP using Custodian
     Task 3) Pass CalcLocs named "{}_dir".format(st_label)
+    Task 4) Update structure to spec
     """
 
-    def __init__(self, spec,
-                 st_label='rlx',
-                 name="composition",
-                 vasp_input_set=None,
-                 user_incar_settings=None,
-                 vasp_cmd=">>vasp_cmd<<",
+    def __init__(self, spec, st_label, name="composition", vasp_input_set=None,
+                 user_incar_settings=None, vasp_cmd=">>vasp_cmd<<",
                  gamma_vasp_cmd=">>gamma_vasp_cmd<<",
                  cust_args=None, **kwargs):
         """
         Args:
             spec (dict): Specification of the job to run.
-            st_label (str): "rlx" (relax), "0" (ep0) or "1" (ep1),
+            st_label (str): "ini" (parent), "ep0" or "ep1",
                          st_label will be used in PassCalcLocs name.
             name(str): A descriptive name for this fireworks
             vasp_input_set (VaspInputSet): Input set to use.
@@ -407,41 +405,34 @@ class NEBRelaxationFW(Firework):
         logger.info("Relaxation Firework in NEB Workflow.")
 
         # Get structure from spec
-        spec = spec or {}
         cust_args = cust_args or {}
-        # kwargs = kwargs or {}  # TODO: can I remove this?
-        if "{}_st".format(st_label) not in spec:
-            raise ValueError("Required structures "
-                             "{}_st not found in spec!".format(st_label))
-        if st_label in ["rlx", "ep0", "ep1"]:
-            try:
-                structure = Structure.from_dict(spec["{}_st".format(st_label)])
-            except:
-                structure = spec["{}_st".format(st_label)]
 
-            if st_label == 'rlx' and vasp_input_set is None:
-                vasp_input_set = MITRelaxSet(structure)
-            if st_label in ["ep0", "ep1"] and vasp_input_set is None:
-                vasp_input_set = MVLCINEBEndPointSet(structure)
-        else:
-            raise ValueError("Unsupported structure label! "
-                             "Choose from \'rlx\', \'ep0\' and \'ep1\'.")
+        assert "{}_st".format(st_label) in spec
+        assert st_label in ["ini", "ep0", "ep1"]
+        structure_dict = spec["{}_st".format(st_label)]
+        assert isinstance(structure_dict, dict)
+        structure = Structure.from_dict(structure_dict)
+
+        if vasp_input_set is None:
+            incar = user_incar_settings or {}
+            vasp_input_set = MITRelaxSet(structure, user_incar_settings=incar) \
+                if st_label == 'ini' \
+                else MVLCINEBEndPointSet(structure, user_incar_settings=incar)
+
+        output_dir = os.path.join(spec["source_dir"], spec["fw_name"], st_label)
 
         # Task 1
-        incar = user_incar_settings or {}
         write_ep_task = WriteVaspFromIOSet(structure=structure,
-                                           vasp_input_set=vasp_input_set,
-                                           vasp_input_params={
-                                               "user_incar_settings": incar
-                                           })
+                                           output_dir=output_dir,
+                                           vasp_input_set=vasp_input_set)
         # Task 2
         run_ep_task = RunVaspCustodian(vasp_cmd=vasp_cmd,
                                        gamma_vasp_cmd=gamma_vasp_cmd,
                                        job_type="normal", **cust_args)
-        # Task 3
-        tasks = [write_ep_task,
-                 run_ep_task,
-                 PassCalcLocs(name="{}_dir".format(st_label))]
+        # Task 3, 4
+        tasks = [write_ep_task, run_ep_task,
+                 PassCalcLocs(name=st_label),
+                 UpdateSpecTask(label=st_label)]
 
         super(NEBRelaxationFW,
               self).__init__(tasks,
@@ -458,13 +449,11 @@ class NEBFW(Firework):
             The group of structures are labeled with neb_label (1, 2...)
     Task 2) Run NEB VASP using Custodian
     Task 3) Pass CalcLocs named "neb_dir_{}".format(neb_label)
+    Task 4) Update structure to spec
     """
 
-    def __init__(self, spec,
-                 name="composition",
-                 neb_label="1",
-                 from_images=True,
-                 user_incar_settings=None,
+    def __init__(self, spec, name="composition", neb_label="1",
+                 from_images=True, user_incar_settings=None,
                  vasp_cmd=">>vasp_cmd<<",
                  gamma_vasp_cmd=">>gamma_vasp_cmd<<",
                  cust_args=None, **kwargs):
@@ -483,31 +472,46 @@ class NEBFW(Firework):
         """
         logger.info("CI-NEB Firework in NEB Workflow.")
 
+        output_dir = os.path.join(spec["source_dir"], spec["wf_name"],
+                                  "neb{}".format(neb_label))
+
         # Task 1: Write NEB input sets
         incar = user_incar_settings or {}
         cust_args = cust_args or {}
 
         if from_images:
             defaults = {"IMAGES": spec["_queueadapter"]["nnodes"]}
+            structures_dict = spec.get("neb")[int(neb_label) - 1]
+            for s in structures_dict:
+                assert isinstance(s, dict)
+            structures = [Structure.from_dict(s) for s in structures_dict]
             defaults.update(incar)
-            images = [Structure.from_dict(s) for s in spec["images"]]
-            vasp_input_set = MVLCINEBSet(structures=images,
+            vasp_input_set = MVLCINEBSet(structures,
                                          user_incar_settings=defaults)
-            write_neb_task = WriteNEBFromImages(vasp_input_set=vasp_input_set)
-        else:
-            write_neb_task = WriteNEBFromEndpoints(
-                user_incar_settings=user_incar_settings)
+
+            write_neb_task = WriteNEBFromImages(vasp_input_set=vasp_input_set,
+                                                output_dir=output_dir)
+        else:  # from endpoints
+            structures_dict = [spec.get("ep0_st"), spec.get("ep1_st")]
+            for s in structures_dict:
+                assert isinstance(s, dict)
+            encpoints = [Structure.from_dict(s) for s in structures_dict]
+            write_neb_task = WriteNEBFromEndpoints(structures=encpoints,
+                               user_incar_settings=user_incar_settings,
+                               output_dir=output_dir)
 
         # Task 2: Run NEB using Custodian
         run_neb_task = RunVaspCustodian(vasp_cmd=vasp_cmd,
                                         gamma_vasp_cmd=gamma_vasp_cmd,
-                                        handler_group="no_handler",  # TODO
+                                        handler_group="no_handler",
                                         gzip_output=False,  # must be false
                                         job_type="neb", **cust_args)
         # Task 3: PassCalLocs
+        # Task 4: Update spec
         tasks = [write_neb_task,
                  run_neb_task,  # TODO: why PassCalcLocs doesn't work, got empty list
-                 PassCalcLocs(name="neb_dir_{}".format(neb_label))]
+                 PassCalcLocs(name="neb{}".format(neb_label)),
+                 UpdateSpecTask(label="neb{}".format(neb_label))]
 
         super(NEBFW, self).__init__(tasks, spec=spec,
                                     name="neb{}_{}".format(neb_label, name),

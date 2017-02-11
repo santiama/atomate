@@ -199,17 +199,17 @@ class TestNudgedElasticBandWorkflow(unittest.TestCase):
     #         np.testing.assert_allclose(raman_tensor["1"], d["raman_tensor"]["1"], rtol=1e-5)
 
     def test_wf(self):
-        self.wf_1 = self._simulate_vasprun(self.wf_1)
+        # self.wf_1 = self._simulate_vasprun(self.wf_1)
         self.wf_2 = self._simulate_vasprun(self.wf_2)
-        self.wf_3 = self._simulate_vasprun(self.wf_3)
-        self.wf_4 = self._simulate_vasprun(self.wf_4)
-        self.wf_5 = self._simulate_vasprun(self.wf_5)
+        # self.wf_3 = self._simulate_vasprun(self.wf_3)
+        # self.wf_4 = self._simulate_vasprun(self.wf_4)
+        # self.wf_5 = self._simulate_vasprun(self.wf_5)
 
-        self.lp.add_wf(self.wf_1)
+        # self.lp.add_wf(self.wf_1)
         self.lp.add_wf(self.wf_2)
-        self.lp.add_wf(self.wf_3)
-        self.lp.add_wf(self.wf_4)
-        self.lp.add_wf(self.wf_5)
+        # self.lp.add_wf(self.wf_3)
+        # self.lp.add_wf(self.wf_4)
+        # self.lp.add_wf(self.wf_5)
 
         rapidfire(self.lp, fworker=FWorker(env={}))
 

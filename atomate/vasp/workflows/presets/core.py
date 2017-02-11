@@ -337,35 +337,52 @@ def wf_thermal_expansion(structure, c=None):
     return wf
 
 
-def wf_nudged_elastic_band(structures, config=None):
+# TODO: what if parameters and yaml are both provided?
+    # TODO:
+#   def read_from_inputs(**kwargs): pass
+#   def read_from_config(file):
+#         config = parse(file)
+#         read_from_inputs(**config)
+# TODO: set default workflow in yamls
+# TODO: don't show mode, only three cases + is_optimized
+def wf_nudged_elastic_band_test(structures, is_optimized=True,
+                                user_incar_settings=[], site_indices=None,
+                                config=None):
+    """
+
+    Args:
+        structures:
+        mode: from ["parent", "endpoints", "neb"]
+        config: use default yaml if None
+
+    Returns:
+
+    """
+    pass
+
+
+# TODO: DEFAULT neb_round = 2
+# Todo: Simplify the table.
+# TODO: Simplify reading yaml file, look at other examples
+def wf_nudged_elastic_band(structures, c=None):  # todo: 1 --> MODE, 2 --> MODE, 3 --> Mode,
     """
     Nudged elastic band workflow from the given structures and config dict.
 
     'is_optimized' = config, otherwise False
     'neb_round' = config, otherwise 1
 
-    Table 1. settings and corresponding workflow (labeled by mode#)
-    =======================================================================
-    #  len(structures)  is_optimized    neb_round     |     Workflow      |
-    -----------------------------------------------------------------------
-    1      1              False         r = 1, 2 ...  |   rlx--ep--neb(r) |
-    2      1              True          r = 1, 2 ...  |   ep--neb(r)      |
-    3      2              False         r = 1, 2 ...  |   ep--neb(r)      |
-    4      2              True          r = 1, 2 ...  |   neb(r)          |
-    5     > 2             T/F           r = 1, 2 ...  |   neb(r)          |
-    =======================================================================
-
     Args:
         structures (Structure / [Structure]): input structures
-        config (dict): workflow config dict, basic format:
+        c (dict): workflow config dict, basic format:
                       {"fireworks": [],
                       "is_optimized": False,
                       "common_params": {}}
     Returns:
         Workflow
     """
-    def get_incar(mode):
+    def get_incar(mode):  # TODO: check atomate default
         """Get user_incar_settings for fireworks."""
+
         uis_ini, uis_ep, uis_neb = {}, {}, [{}] * neb_round
 
         if mode not in [1, 2, 3, 4, 5]:
@@ -409,7 +426,7 @@ def wf_nudged_elastic_band(structures, config=None):
         raise ValueError("structures must be a list of Structure!")
 
     # config
-    c = config or {}
+    c = c or {}
     spec = c.get("common_params") or {}
 
     wfname = "CINEB"
@@ -454,9 +471,13 @@ def wf_nudged_elastic_band(structures, config=None):
 
     uis_ini, uis_ep, uis_neb = get_incar(mode)
 
+    user_incar_settings = {"parent": uis_ini,
+                           "endpoints": uis_ep,
+                           "neb": uis_neb}
+
     # Get other parameters from config file
     if len(spec) > 0:
-        wfname = spec.get("wfname", "CINEB")
+        wfname = spec.get("wf_name", "CINEB")
         path_sites = spec.get("path_sites", [])
 
     # Assign workflow using mode
@@ -464,25 +485,19 @@ def wf_nudged_elastic_band(structures, config=None):
         wf = get_wf_neb_from_structure(structure=structures[0],
                                        path_sites=path_sites,
                                        is_optimized=is_optimized,
-                                       wfname=wfname,
+                                       wf_name=wfname,
                                        spec=spec,
-                                       neb_round=neb_round,
-                                       uis_ini=uis_ini,
-                                       uis_ep=uis_ep,
-                                       uis_neb=uis_neb)
+                                       user_incar_settings=user_incar_settings)
     elif mode in [3, 4]:
         wf = get_wf_neb_from_endpoints(endpoints=structures,
                                        is_optimized=is_optimized,
-                                       wfname=wfname,
+                                       wf_name=wfname,
                                        spec=spec,
-                                       neb_round=neb_round,
-                                       uis_ep=uis_ep,
-                                       uis_neb=uis_neb)
+                                       user_incar_settings=user_incar_settings)
     else:
         wf = get_wf_neb_from_images(images=structures,
-                                    wfname=wfname,
+                                    wf_name=wfname,
                                     spec=spec,
-                                    neb_round=neb_round,
-                                    uis_neb=uis_neb)
+                                    user_incar_settings=user_incar_settings)
     return wf
 
